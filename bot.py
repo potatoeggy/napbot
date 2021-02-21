@@ -143,7 +143,7 @@ if __name__ == "__main__":
 	@bot.command(name="islept", help="Records the number of hours you slept last night.")
 	async def save_hours(ctx, hours_slept: int, user_override=None):
 		sender = int(user_override) if user_override != None else ctx.message.author.id
-		if ctx.message.author.id != admin_user_id:
+		if user_override != None and ctx.message.author.id != admin_user_id:
 			await ctx.send(f"ERROR: {ctx.message.author} does not have override permissions.")
 			return
 		if not 0 <= hours_slept <= 11:
@@ -189,5 +189,27 @@ if __name__ == "__main__":
 		for i, h in enumerate(weekly):
 			embed.description += f"{i+1}. <@{int(h[1])}> — {h[0]} hours{str(' ⏲️') if not str(today()) in data[h[1]] else ''}\n"
 		await ctx.send(embed=embed)
+	
+	@bot.command(name="tex", help="render math")
+	async def bot_tex(ctx, *, content):
+		await(ctx, content)
+
+	async def tex(ctx, content):
+		content = content.replace(" ", r"&space;").replace("+", r"&plus;").replace("\n", "")
+		math_url = "https://latex.codecogs.com/png.latex?\\bg_white&space;\\LARGE&space;"
+		embed = discord.Embed()
+		embed.set_image(url=f"{math_url}{content}")
+		await ctx.send(embed=embed)
+	
+	@bot.event
+	async def on_message(message):
+		content = message.content
+		if not "$$" in content:
+			return
+		content = content.split("$$")
+		for i, s in enumerate(content):
+			if i % 2 == 1:
+				await tex(message.channel, s)
+
 
 	bot.run(client_token)
