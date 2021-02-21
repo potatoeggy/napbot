@@ -143,7 +143,7 @@ if __name__ == "__main__":
 	@bot.command(name="islept", help="Records the number of hours you slept last night.")
 	async def save_hours(ctx, hours_slept: int, user_override=None):
 		sender = int(user_override) if user_override != None else ctx.message.author.id
-		if ctx.message.author.id != admin_user_id:
+		if user_override != None and ctx.message.author.id != admin_user_id:
 			await ctx.send(f"ERROR: {ctx.message.author} does not have override permissions.")
 			return
 		if not 0 <= hours_slept <= 11:
