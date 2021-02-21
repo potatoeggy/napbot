@@ -191,25 +191,33 @@ if __name__ == "__main__":
 		await ctx.send(embed=embed)
 	
 	@bot.command(name="tex", help="render math")
-	async def bot_tex(ctx, *, content):
-		await(ctx, content)
+	async def bot_tex(ctx, *, content: str):
+		await tex(ctx, content)
 
-	async def tex(ctx, content):
+	async def tex(ctx, content: str):
 		content = content.replace(" ", r"&space;").replace("+", r"&plus;").replace("\n", "")
 		math_url = "https://latex.codecogs.com/png.latex?\\bg_white&space;\\LARGE&space;"
 		embed = discord.Embed()
 		embed.set_image(url=f"{math_url}{content}")
 		await ctx.send(embed=embed)
 	
+	@bot.command(name="quit", help="Exit")
+	async def quit(ctx):
+		await ctx.send("Going to sleep now. Goodbye!")
+		await bot.logout()
+
 	@bot.event
 	async def on_message(message):
+		await bot.process_commands(message)
 		content = message.content
 		if not "$$" in content:
 			return
 		content = content.split("$$")
+
+		if len(content) < 3:
+			return
 		for i, s in enumerate(content):
 			if i % 2 == 1:
 				await tex(message.channel, s)
-
 
 	bot.run(client_token)
