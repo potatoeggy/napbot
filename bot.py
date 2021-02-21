@@ -189,5 +189,27 @@ if __name__ == "__main__":
 		for i, h in enumerate(weekly):
 			embed.description += f"{i+1}. <@{int(h[1])}> — {h[0]} hours{str(' ⏲️') if not str(today()) in data[h[1]] else ''}\n"
 		await ctx.send(embed=embed)
+	
+	@bot.command(name="tex", help="render math")
+	async def bot_tex(ctx, *, content):
+		await(ctx, content)
+
+	async def tex(ctx, content):
+		content = content.replace(" ", r"&space;").replace("+", r"&plus;").replace("\n", "")
+		math_url = "https://latex.codecogs.com/png.latex?\\bg_white&space;\\LARGE&space;"
+		embed = discord.Embed()
+		embed.set_image(url=f"{math_url}{content}")
+		await ctx.send(embed=embed)
+	
+	@bot.event
+	async def on_message(message):
+		content = message.content
+		if not "$$" in content:
+			return
+		content = content.split("$$")
+		for i, s in enumerate(content):
+			if i % 2 == 1:
+				await tex(message.channel, s)
+
 
 	bot.run(client_token)
