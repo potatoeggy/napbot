@@ -20,7 +20,7 @@ def debug(string, urgent=False):
 
 def show_help(): # TODO: consider adding
 	debug("Exiting for showing help", urgent=True)
-	exit()
+	exit(0)
 
 def today():
 	return datetime.date.today()
@@ -152,6 +152,7 @@ if __name__ == "__main__":
 		
 		push_data(sender, hours_slept, data, data_file)
 		await ctx.message.add_reaction("✅")
+		await leaderboard(ctx, from_new_add=True)
 
 	@bot.command(name="slept", help="Alias for islept")
 	async def save_hours2(ctx, hours_slept: int, user_override=None):
@@ -177,22 +178,36 @@ if __name__ == "__main__":
 		await stats(ctx)
 
 	@bot.command(name="leaderboard", help="Show everyone's weekly sleep stats")
-	async def leaderboard(ctx, board="weekly"): # TODO: implement
+	async def board2(ctx, board="weekly"):
+		await leaderboard(ctx, board)
+
+	@bot.command(name="board", help="Alias for leaderboard")
+	async def board(ctx, board="weekly"):
+		await leaderboard(ctx, board)
+	
+	async def leaderboard(ctx, board="weekly", from_new_add=False): # TODO: implement
+		is_time_for_end_prize = False
+		is_time_for_end_prize = today().weekday() == 4 and all(str(today()) in i[1] for i in data.items())
+		if from_new_add and not is_time_for_end_prize:
+			return
+
 		# TODO: implement non-weekly leaderboards
 		weekly = []
 		days_remaining = 7-(today()-last_saturday()).days
 		for i, d in data.items():
 			weekly.append((cumulative_week(str(i), data), i))
 		weekly.sort(reverse=True)
-		embed = discord.Embed(title=f"Leaderboard for {last_saturday()} to {today()}:")
-		embed.description = f"{days_remaining} days remaining.\n\n"
-		for i, h in enumerate(weekly):
-			embed.description += f"{i+1}. <@{int(h[1])}> — {h[0]} hours{str(' ⏲️') if not str(today()) in data[h[1]] else ''}\n"
-		await ctx.send(embed=embed)
+		embed = discord.Embed(title=f"{str('🎉 ') if is_time_for_end_prize else ''}Leaderboard for {last_saturday()} to {today()}:")
 
-	@bot.command(name="board", help="Alias for leaderboard")
-	async def board(ctx, board="weekly"):
-		await leaderboard(ctx, board)
+		embed.description = f"Congratulations, {', '.join(f'<@{i[1]}>' for i in filter(lambda h: weekly[0][0] == h[0], weekly))}!\n\n" if is_time_for_end_prize else f"{days_remaining} days remaining.\n\n"
+		top_user = []
+		for i, h in enumerate(weekly):
+			prefix = f"{i+1}."
+			if is_time_for_end_prize:
+				if h[0] == weekly[0][0]:
+					prefix = str("🏅")
+			embed.description += f"{prefix} <@{int(h[1])}> — {h[0]} hours{str(' ⏲️') if not str(today()) in data[h[1]] else ''}\n"
+		await ctx.send(embed=embed)
 	
 	@bot.command(name="tex", help="render math")
 	async def bot_tex(ctx, *, content: str):
