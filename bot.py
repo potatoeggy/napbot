@@ -210,6 +210,11 @@ if __name__ == "__main__":
 		await ctx.send("Going to sleep now. Goodbye!")
 		await bot.logout()
 
+	@bot.command(name="reload", help="Reload configuration")
+	async def reload(ctx):
+		await ctx.send("Configuration reloaded.")
+		exit(1)
+
 	@bot.event
 	async def on_message(message):
 		await bot.process_commands(message)
