@@ -189,6 +189,10 @@ if __name__ == "__main__":
 		for i, h in enumerate(weekly):
 			embed.description += f"{i+1}. <@{int(h[1])}> — {h[0]} hours{str(' ⏲️') if not str(today()) in data[h[1]] else ''}\n"
 		await ctx.send(embed=embed)
+
+	@bot.command(name="board", help="Alias for leaderboard")
+	async def board(ctx, board="weekly"):
+		await leaderboard(ctx, board)
 	
 	@bot.command(name="tex", help="render math")
 	async def bot_tex(ctx, *, content: str):
