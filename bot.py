@@ -115,6 +115,7 @@ def init():
 	discord_token = check_config("discord_token")
 	discord_guild = check_config("discord_guild")
 	admin_user_id = check_config("admin_user_id")
+	show_board_after_log = check_config("show_board_after_log", True)
 	VERBOSE = check_config("verbose", False)
 
 	# load saved data
@@ -129,10 +130,10 @@ def init():
 		debug("Could not find data file. Exiting...", urgent=True) # data file is probably not found and so will crash
 		exit()
 	
-	return discord_guild, discord_token, data, data_file, admin_user_id
+	return discord_guild, discord_token, data, data_file, admin_user_id, show_board_after_log
 
 if __name__ == "__main__":
-	guild_id, client_token, data, data_file, admin_user_id = init()
+	guild_id, client_token, data, data_file, admin_user_id, show_board_after_log = init()
 	bot = commands.Bot(command_prefix="!")
 
 	@bot.event
@@ -152,7 +153,7 @@ if __name__ == "__main__":
 		
 		push_data(sender, hours_slept, data, data_file)
 		await ctx.message.add_reaction("✅")
-		await leaderboard(ctx, from_new_add=True)
+		await leaderboard(ctx, show_board=show_board_after_log)
 
 	@bot.command(name="slept", help="Alias for islept")
 	async def save_hours2(ctx, hours_slept: int, user_override=None):
@@ -185,10 +186,10 @@ if __name__ == "__main__":
 	async def board(ctx, board="weekly"):
 		await leaderboard(ctx, board)
 	
-	async def leaderboard(ctx, board="weekly", from_new_add=False): # TODO: implement
+	async def leaderboard(ctx, board="weekly", show_board=True): # TODO: implement
 		is_time_for_end_prize = False
 		is_time_for_end_prize = today().weekday() == 4 and all(str(today()) in i[1] for i in data.items())
-		if from_new_add and not is_time_for_end_prize:
+		if not show_board and not is_time_for_end_prize:
 			return
 
 		# TODO: implement non-weekly leaderboards
