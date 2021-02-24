@@ -198,9 +198,9 @@ if __name__ == "__main__":
 		for i, d in data.items():
 			weekly.append((cumulative_week(str(i), data), i))
 		weekly.sort(reverse=True)
-		embed = discord.Embed(title=f"{str('🎉 ') if is_time_for_end_prize else ''}Leaderboard for {last_saturday()} to {today()}:")
+		embed = discord.Embed(title=f"Leaderboard for {last_saturday()} to {today()}:")
 
-		embed.description = f"Congratulations, {', '.join(f'<@{i[1]}>' for i in filter(lambda h: weekly[0][0] == h[0], weekly))}!\n\n" if is_time_for_end_prize else f"{days_remaining} days remaining.\n\n"
+		embed.description = f"{str('🎉')} Congratulations, {', '.join(f'<@{i[1]}>' for i in filter(lambda h: weekly[0][0] == h[0], weekly))}!\n\n" if is_time_for_end_prize else f"{days_remaining} days remaining.\n\n"
 		top_user = []
 		for i, h in enumerate(weekly):
 			prefix = f"{i+1}."
