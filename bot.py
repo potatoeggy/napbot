@@ -26,7 +26,10 @@ def today():
 	return datetime.date.today()
 
 def last_saturday():
-	return today() - datetime.timedelta((today().weekday()+1) % 7 + 1)
+	offset = datetime.timedelta((today().weekday()+1) % 7 + 1)
+	if today().weekday() == 5:
+		offset = datetime.timedelta(days=0)
+	return today() - offset
 
 def cumulative(discord_id: int, data: dict):
 	return sum(data[str(discord_id)].values())
