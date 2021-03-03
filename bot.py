@@ -138,6 +138,7 @@ def init():
 if __name__ == "__main__":
 	guild_id, client_token, data, data_file, admin_user_id, show_board_after_log = init()
 	bot = commands.Bot(command_prefix="!")
+	command_register = []
 
 	@bot.event
 	async def on_ready():
@@ -235,7 +236,11 @@ if __name__ == "__main__":
 		exit(1)
 
 	@bot.command(name="register", help="Register a new temporary custom command")
-	async def register(ctx, keyword: str, output: str, help="A temporary custom command"):
+	async def register(ctx, keyword: str, output: str, contains="", startswith="", help="A temporary custom command"):
+		if startswith.startswith("!"):
+			await ctx.send("Triggers cannot begin with an exclamation mark.")
+			return
+
 		@commands.command(name=keyword, help=help)
 		async def c(ctx, *args):
 			await ctx.send(output.format(*args))
@@ -243,14 +248,24 @@ if __name__ == "__main__":
 		keyword = keyword.replace(" ", "").replace("!", "")
 		try:
 			bot.add_command(c)
+			command_register.append((c, contains, startswith))
 			await ctx.send(f"Registered new temporary command {keyword}.")
 		except commands.CommandRegistrationError:
-			await ctx.send(f"The keyword `{keyword}` is already registered as a built-in command and cannot be overwritten.")
+			await ctx.send(f"The keyword `{keyword}` is already registered as a command and cannot be overwritten.")
 
 	@bot.event
 	async def on_message(message):
 		await bot.process_commands(message)
 		content = message.content
+		for c, contains, startswith in command_register:
+			if startswith != "":
+				if message.startswith(startswith):
+					await c(message.context, *(message.split()))
+			elif contains != "":
+				if contains in message:
+					await c(message.context, *(message.split()))
+
+		# non-command latex support
 		if not "$$" in content:
 			return
 		content = content.split("$$")
