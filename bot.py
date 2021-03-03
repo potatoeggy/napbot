@@ -234,6 +234,19 @@ if __name__ == "__main__":
 		await ctx.send("Configuration reloaded.")
 		exit(1)
 
+	@bot.command(name="register", help="Register a new temporary custom command")
+	async def register(ctx, keyword: str, output: str, help="A temporary custom command"):
+		@commands.command(name=keyword, help=help)
+		async def c(ctx, *args):
+			await ctx.send(output.format(*args))
+		
+		keyword = keyword.replace(" ", "").replace("!", "")
+		try:
+			bot.add_command(c)
+			await ctx.send(f"Registered new temporary command {keyword}.")
+		except commands.CommandRegistrationError:
+			await ctx.send(f"The keyword `{keyword}` is already registered as a built-in command and cannot be overwritten.")
+
 	@bot.event
 	async def on_message(message):
 		await bot.process_commands(message)
