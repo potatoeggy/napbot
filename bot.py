@@ -257,13 +257,15 @@ if __name__ == "__main__":
 	async def on_message(message):
 		await bot.process_commands(message)
 		content = message.content
+		if content.startswith("!"):
+			return
 		for c, contains, startswith in command_register:
 			if startswith != "":
-				if message.startswith(startswith):
-					await c(message.context, *(message.split()))
+				if content.startswith(startswith):
+					await c(message.channel, *(message.split()))
 			elif contains != "":
-				if contains in message:
-					await c(message.context, *(message.split()))
+				if contains in message.content:
+					await c(message.channel, *(content.split()))
 
 		# non-command latex support
 		if not "$$" in content:
