@@ -137,7 +137,7 @@ def init():
 
 if __name__ == "__main__":
 	guild_id, client_token, data, data_file, admin_user_id, show_board_after_log = init()
-	bot = commands.Bot(command_prefix="!")
+	bot = commands.Bot(command_prefix=".")
 	command_register = []
 
 	@bot.event
