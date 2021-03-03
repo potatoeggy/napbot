@@ -227,8 +227,11 @@ if __name__ == "__main__":
 	
 	@bot.command(name="quit", help="Exit")
 	async def quit(ctx):
-		await ctx.send("Going to sleep now. Goodbye!")
-		await bot.logout()
+		if ctx.message.author.id == admin_user_id:
+			await ctx.send("Going to sleep now. Goodbye!")
+			await bot.logout()
+		else:
+			await ctx.send("You are not an administrator. Get lost.")
 
 	@bot.command(name="reload", help="Reload configuration")
 	async def reload(ctx):
