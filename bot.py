@@ -9,6 +9,8 @@ from discord.ext import commands, tasks
 from discord_slash import SlashCommand
 from discord_slash.utils import manage_commands
 
+import traceback
+
 import requests
 import time
 import datetime
@@ -302,11 +304,6 @@ if __name__ == "__main__":
 	)
 	@bot.command(name="register", help="Register a new temporary custom command")
 	async def register(ctx, keyword: str, output: str, contains="", help="A temporary custom command"):
-		@slash.slash(
-			name=keyword,
-			description=help,
-			guild_ids=[guild_id]
-		)
 		@commands.command(name=keyword, help=help)
 		async def c(ctx, *args):
 			await ctx.send(output.format(*args))
@@ -314,13 +311,15 @@ if __name__ == "__main__":
 		keyword = keyword.replace(" ", "").replace(command_prefix, "")
 		try:
 			bot.add_command(c)
-			manage_commands.add_slash_command(bot.user.id, client_token, guild_id, keyword, help)
 			command_register.append((c, contains))
 			await ctx.send(f"Registered new temporary command {keyword}.")
 		except commands.CommandRegistrationError:
 			await ctx.send(f"The keyword `{keyword}` is already registered as a command and cannot be overwritten.")
-		except discord_slash.error.RequestFailure:
+		except discord_slash.error.DuplicateCommand:
 			await ctx.send(f"The keyword `{keyword}` is already registered as a remote command and cannot be overwritten.")
+		except Exception:
+			traceback.print_exc()
+			await ctx.send(f"Something broke — don't do it again.")
 
 	@bot.event
 	async def on_command(message):
@@ -332,11 +331,8 @@ if __name__ == "__main__":
 		content = message.content
 		if content.startswith(command_prefix):
 			return
-		for c, contains, startswith in command_register:
-			if startswith != "":
-				if content.startswith(startswith):
-					await c(message.channel, *(message.split()))
-			elif contains != "":
+		for c, contains in command_register:
+			if contains != "":
 				if contains in message.content:
 					await c(message.channel, *(content.split()))
 
