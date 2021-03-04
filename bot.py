@@ -4,7 +4,13 @@ import os
 import sys
 import json
 import discord
+import discord_slash
 from discord.ext import commands, tasks
+from discord_slash import SlashCommand
+from discord_slash.utils import manage_commands
+
+import traceback
+
 import requests
 import time
 import datetime
@@ -51,33 +57,6 @@ def push_data(discord_id: int, hours: int, data, data_file): # TODO: add previou
 	data[discord_id][str(today())] = hours
 	with open(data_file, "w") as file:
 		file.write(json.dumps(data, indent=4))
-
-def register_commands(client, client_id, client_token, guild_id, everywhere=False):
-	url = f"https://discord.com/api/v8/applications/{client_id}/"
-	if not everywhere:
-		url += f"guilds/{guild_id}/"
-	url += "commands"
-
-	json = {
-		"name": "islept",
-		"description": "Record the number of hours you slept last night",
-		"options": [
-			{
-				"name": "hours",
-				"description": "The number of hours",
-				"type": 1,
-				"required": True,
-
-			}
-		]
-	}
-
-	headers = {
-		"Authorization": "Bot " + client_token
-	}
-
-	r = requests.post(url, headers=headers, json=json)
-	debug("Registered required commands.")
 
 def init():
 	# TODO: import from env vars
@@ -137,7 +116,9 @@ def init():
 
 if __name__ == "__main__":
 	guild_id, client_token, data, data_file, admin_user_id, show_board_after_log = init()
-	bot = commands.Bot(command_prefix=".")
+	command_prefix = "."
+	bot = commands.Bot(command_prefix=command_prefix, intents=discord.Intents.all())
+	slash = SlashCommand(bot, sync_commands=True)
 	command_register = []
 
 	@bot.event
@@ -145,31 +126,54 @@ if __name__ == "__main__":
 		guild = discord.utils.get(bot.guilds, id=guild_id)
 		debug(f"{bot.user} connected to Discord to {guild} (id: {guild_id}).", urgent=True)
 
-	@bot.command(name="islept", help="Records the number of hours you slept last night.")
-	async def save_hours(ctx, hours_slept: int, user_override=None):
-		sender = int(user_override) if user_override != None else ctx.message.author.id
-		if user_override != None and ctx.message.author.id != admin_user_id:
-			await ctx.send(f"ERROR: {ctx.message.author} does not have override permissions.")
+	@slash.slash(
+		name="slept",
+		description="Records the number of hours you slept last night",
+		options=[
+			manage_commands.create_option(
+				name="hours_slept",
+				description="Number of hours slept last night",
+				option_type=4,
+				required=True
+			),
+			manage_commands.create_option(
+				name="user_override",
+				description="The user to update hours for",
+				option_type=6,
+				required=False,
+			)
+		],
+		guild_ids=[guild_id]
+	)
+	@bot.command(name="slept", help="Records the number of hours you slept last night", aliases=["islept", "s"])
+	async def save_hours(ctx, hours_slept: int, user_override: discord.Member=None):
+		sender = user_override.id if user_override != None else ctx.author.id
+		if user_override != None and ctx.author.id != admin_user_id:
+			await ctx.send(f"ERROR: {ctx.author} does not have override permissions.")
 			return
 		if not 0 <= hours_slept <= 11:
 			await ctx.send(f"ERROR: {hours_slept} hours is not in the range of 0 to 11 hours.")
 			return
 		
 		push_data(sender, hours_slept, data, data_file)
-		await ctx.message.add_reaction("✅")
 		await leaderboard(ctx, show_board=show_board_after_log)
 
-	@bot.command(name="slept", help="Alias for islept")
-	async def save_hours2(ctx, hours_slept: int, user_override=None):
-		await save_hours(ctx, hours_slept, user_override)
-	
-	@bot.command(name="s", help="Alias for islept")
-	async def save_hours3(ctx, hours_slept: int, user_override=None):
-		await save_hours(ctx, hours_slept, user_override)
-
-	@bot.command(name="stats", help="Shows sleep statistics for a user")
-	async def stats(ctx, target_id: int =None): #TODO: implement
-		sender = ctx.message.author if target_id == None else await bot.fetch_user(target_id)
+	@slash.slash(
+		name="stats",
+		description="Shows sleep statistics (you by default)",
+		options=[
+			manage_commands.create_option(
+				name="target_id",
+				description="The user to get statistics for instead",
+				option_type=6,
+				required=False,
+			)
+		],
+		guild_ids=[guild_id]
+	)
+	@bot.command(name="stats", help="Shows sleep statistics (you by default)", aliases=["me"])
+	async def stats(ctx, user: discord.Member =None):
+		sender = ctx.author if user is None else user
 		embed = discord.Embed(title=f"Sleep statistics for {sender.name}:")
 		embed.add_field(name="Cumulative hours slept:", value=cumulative(sender.id, data), inline=False)
 		embed.add_field(name="Average of cumulative hours slept:", value=cumulative_average(sender.id, data), inline=False)
@@ -178,19 +182,25 @@ if __name__ == "__main__":
 		embed.add_field(name="Hours slept last night:", value=hours_today(sender.id, data), inline=False)
 		await ctx.send(embed=embed)
 
-	@bot.command(name="me", help="Alias for stats <your_id>")
-	async def stats2(ctx):
-		await stats(ctx)
+	@slash.slash(
+		name="board",
+		description="Show everyone's sleep stats",
+		options=[
+			manage_commands.create_option(
+				name="board_type",
+				description="Type of statistic to get",
+				option_type=3,
+				required=False,
+				choices=["weekly"]
+			)
+		],
+		guild_ids=[guild_id]
+	)
+	@bot.command(name="leaderboard", help="Show everyone's sleep stats", aliases=["board"])
+	async def board(ctx, board_type="weekly", show_board=True):
+		await leaderboard(ctx, board_type, show_board)
 
-	@bot.command(name="leaderboard", help="Show everyone's weekly sleep stats")
-	async def board2(ctx, board="weekly"):
-		await leaderboard(ctx, board)
-
-	@bot.command(name="board", help="Alias for leaderboard")
-	async def board(ctx, board="weekly"):
-		await leaderboard(ctx, board)
-	
-	async def leaderboard(ctx, board="weekly", show_board=True): # TODO: implement
+	async def leaderboard(ctx, board_type="weekly", show_board=True): # TODO: implement
 		is_time_for_end_prize = False
 		is_time_for_end_prize = today().weekday() == 4 and all(str(today()) in i[1] for i in data.items())
 		if not show_board and not is_time_for_end_prize:
@@ -214,6 +224,19 @@ if __name__ == "__main__":
 			embed.description += f"{prefix} <@{int(h[1])}> — {h[0]} hours{str(' ⏲️') if not str(today()) in data[h[1]] else ''}\n"
 		await ctx.send(embed=embed)
 	
+	@slash.slash(
+		name="tex",
+		description="Render your message in LaTeX",
+		options=[
+			manage_commands.create_option(
+				name="content",
+				description="The LaTeX to be rendered",
+				option_type=3,
+				required=True,
+			)
+		],
+		guild_ids=[guild_id]
+	)
 	@bot.command(name="tex", help="render math")
 	async def bot_tex(ctx, *, content: str):
 		await tex(ctx, content)
@@ -225,48 +248,95 @@ if __name__ == "__main__":
 		embed.set_image(url=f"{math_url}{content}")
 		await ctx.send(embed=embed)
 	
-	@bot.command(name="quit", help="Exit")
+	@slash.slash(
+		name="quit",
+		description="Close the bot (admin-only)",
+		options=[],
+		guild_ids=[guild_id]
+	)
+	@bot.command(name="quit", help="Close the bot (admin-only)")
 	async def quit(ctx):
-		if ctx.message.author.id == admin_user_id:
+		if ctx.author.id == admin_user_id:
 			await ctx.send("Going to sleep now. Goodbye!")
 			await bot.logout()
 		else:
 			await ctx.send("You are not an administrator. Get lost.")
 
+	@slash.slash(
+		name="reload",
+		description="Reload the bot configuration",
+		options=[],
+		guild_ids=[guild_id]
+	)
 	@bot.command(name="reload", help="Reload configuration")
 	async def reload(ctx):
 		await ctx.send("Configuration reloaded.")
 		exit(1)
 
+	@slash.slash(
+		name="register",
+		description="Register a temporary custom command",
+		options=[
+			manage_commands.create_option(
+				name="keyword",
+				description="The trigger keyword to use",
+				option_type=3,
+				required=True
+			),
+			manage_commands.create_option(
+				name="output",
+				description="The output to print",
+				option_type=3,
+				required=True
+			),
+			manage_commands.create_option(
+				name="contains",
+				description="Run if this string is detected in any message",
+				option_type=3,
+				required=False
+			),
+			manage_commands.create_option(
+				name="help",
+				description="Help text",
+				option_type=3,
+				required=False
+			)
+		],
+		guild_ids=[guild_id]
+	)
 	@bot.command(name="register", help="Register a new temporary custom command")
-	async def register(ctx, keyword: str, output: str, contains="", startswith="", help="A temporary custom command"):
-		if startswith.startswith("!"):
-			await ctx.send("Triggers cannot begin with an exclamation mark.")
-			return
-
+	async def register(ctx, keyword: str, output: str, contains="", help="A temporary custom command"):
+		keyword = keyword.replace(" ", "").replace(command_prefix, "")
 		@commands.command(name=keyword, help=help)
 		async def c(ctx, *args):
 			await ctx.send(output.format(*args))
 		
-		keyword = keyword.replace(" ", "").replace("!", "")
 		try:
 			bot.add_command(c)
-			command_register.append((c, contains, startswith))
+			slash.add_slash_command(c, name=keyword, description=help, options=[], guild_ids=[guild_id])
+			command_register.append((c, contains))
+			await slash.sync_all_commands()
 			await ctx.send(f"Registered new temporary command {keyword}.")
 		except commands.CommandRegistrationError:
 			await ctx.send(f"The keyword `{keyword}` is already registered as a command and cannot be overwritten.")
+		except discord_slash.error.DuplicateCommand:
+			await ctx.send(f"The keyword `{keyword}` is already registered as a remote command and cannot be overwritten.")
+		except Exception:
+			traceback.print_exc()
+			await ctx.send(f"Something broke — don't do it again.")
+
+	@bot.event
+	async def on_command(message):
+		await message.channel.send("WARNING: Traditional prefixed commands are deprecated and will be removed in a future update. Please switch to slash commands instead.")
 
 	@bot.event
 	async def on_message(message):
 		await bot.process_commands(message)
 		content = message.content
-		if content.startswith("!"):
+		if message.author.bot or content.startswith(command_prefix) or content.startswith("</"):
 			return
-		for c, contains, startswith in command_register:
-			if startswith != "":
-				if content.startswith(startswith):
-					await c(message.channel, *(message.split()))
-			elif contains != "":
+		for c, contains in command_register:
+			if contains != "":
 				if contains in message.content:
 					await c(message.channel, *(content.split()))
 
