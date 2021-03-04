@@ -304,11 +304,11 @@ if __name__ == "__main__":
 	)
 	@bot.command(name="register", help="Register a new temporary custom command")
 	async def register(ctx, keyword: str, output: str, contains="", help="A temporary custom command"):
+		keyword = keyword.replace(" ", "").replace(command_prefix, "")
 		@commands.command(name=keyword, help=help)
 		async def c(ctx, *args):
 			await ctx.send(output.format(*args))
 		
-		keyword = keyword.replace(" ", "").replace(command_prefix, "")
 		try:
 			bot.add_command(c)
 			slash.add_slash_command(c, name=keyword, description=help, guild_ids=[guild_id])
@@ -331,7 +331,7 @@ if __name__ == "__main__":
 	async def on_message(message):
 		await bot.process_commands(message)
 		content = message.content
-		if content.startswith(command_prefix):
+		if content.startswith(command_prefix) or content.startswith("/"):
 			return
 		for c, contains in command_register:
 			if contains != "":
