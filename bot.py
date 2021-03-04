@@ -311,7 +311,8 @@ if __name__ == "__main__":
 		keyword = keyword.replace(" ", "").replace(command_prefix, "")
 		try:
 			bot.add_command(c)
-			slash.sync_all_commands()
+			slash.add_slash_command(c, name=keyword, description=help, guild_ids=[guild_id])
+			await slash.sync_all_commands()
 			command_register.append((c, contains))
 			await ctx.send(f"Registered new temporary command {keyword}.")
 		except commands.CommandRegistrationError:
