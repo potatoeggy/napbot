@@ -4,6 +4,7 @@ import os
 import sys
 import json
 import discord
+import discord_slash
 from discord.ext import commands, tasks
 from discord_slash import SlashCommand
 from discord_slash.utils import manage_commands
@@ -268,12 +269,44 @@ if __name__ == "__main__":
 		await ctx.send("Configuration reloaded.")
 		exit(1)
 
+	@slash.slash(
+		name="register",
+		description="Register a temporary custom command",
+		options=[
+			manage_commands.create_option(
+				name="keyword",
+				description="The trigger keyword to use",
+				option_type=3,
+				required=True
+			),
+			manage_commands.create_option(
+				name="output",
+				description="The output to print",
+				option_type=3,
+				required=True
+			),
+			manage_commands.create_option(
+				name="contains",
+				description="Run if this string is detected in any message",
+				option_type=3,
+				required=False
+			),
+			manage_commands.create_option(
+				name="help",
+				description="Help text",
+				option_type=3,
+				required=False
+			)
+		],
+		guild_ids=[guild_id]
+	)
 	@bot.command(name="register", help="Register a new temporary custom command")
-	async def register(ctx, keyword: str, output: str, contains="", startswith="", help="A temporary custom command"):
-		if startswith.startswith(command_prefix):
-			await ctx.send("Triggers cannot begin with the command prefix.")
-			return
-
+	async def register(ctx, keyword: str, output: str, contains="", help="A temporary custom command"):
+		@slash.slash(
+			name=keyword,
+			description=help,
+			guild_ids=[guild_id]
+		)
 		@commands.command(name=keyword, help=help)
 		async def c(ctx, *args):
 			await ctx.send(output.format(*args))
@@ -281,11 +314,14 @@ if __name__ == "__main__":
 		keyword = keyword.replace(" ", "").replace(command_prefix, "")
 		try:
 			bot.add_command(c)
-			command_register.append((c, contains, startswith))
+			manage_commands.add_slash_command(bot.user.id, client_token, guild_id, keyword, help)
+			command_register.append((c, contains))
 			await ctx.send(f"Registered new temporary command {keyword}.")
 		except commands.CommandRegistrationError:
 			await ctx.send(f"The keyword `{keyword}` is already registered as a command and cannot be overwritten.")
-	
+		except discord_slash.error.RequestFailure:
+			await ctx.send(f"The keyword `{keyword}` is already registered as a remote command and cannot be overwritten.")
+
 	@bot.event
 	async def on_command(message):
 		await message.channel.send("WARNING: Traditional prefixed commands are deprecated and will be removed in a future update. Please switch to slash commands instead.")
