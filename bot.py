@@ -259,6 +259,10 @@ if __name__ == "__main__":
 			await ctx.send(f"Registered new temporary command {keyword}.")
 		except commands.CommandRegistrationError:
 			await ctx.send(f"The keyword `{keyword}` is already registered as a command and cannot be overwritten.")
+	
+	@bot.event
+	async def on_command(message):
+		await message.channel.send("WARNING: Traditional prefixed commands are deprecated and will be removed in a future update. Please switch to slash commands instead.")
 
 	@bot.event
 	async def on_message(message):
