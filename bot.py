@@ -5,6 +5,9 @@ import sys
 import json
 import discord
 from discord.ext import commands, tasks
+from discord_slash import SlashCommand
+from discord_slash.utils import manage_commands
+
 import requests
 import time
 import datetime
@@ -51,33 +54,6 @@ def push_data(discord_id: int, hours: int, data, data_file): # TODO: add previou
 	data[discord_id][str(today())] = hours
 	with open(data_file, "w") as file:
 		file.write(json.dumps(data, indent=4))
-
-def register_commands(client, client_id, client_token, guild_id, everywhere=False):
-	url = f"https://discord.com/api/v8/applications/{client_id}/"
-	if not everywhere:
-		url += f"guilds/{guild_id}/"
-	url += "commands"
-
-	json = {
-		"name": "islept",
-		"description": "Record the number of hours you slept last night",
-		"options": [
-			{
-				"name": "hours",
-				"description": "The number of hours",
-				"type": 1,
-				"required": True,
-
-			}
-		]
-	}
-
-	headers = {
-		"Authorization": "Bot " + client_token
-	}
-
-	r = requests.post(url, headers=headers, json=json)
-	debug("Registered required commands.")
 
 def init():
 	# TODO: import from env vars
@@ -137,7 +113,9 @@ def init():
 
 if __name__ == "__main__":
 	guild_id, client_token, data, data_file, admin_user_id, show_board_after_log = init()
-	bot = commands.Bot(command_prefix=".")
+	command_prefix = "."
+	bot = commands.Bot(command_prefix=command_prefix, intents=discord.Intents.all())
+	slash = SlashCommand(bot, sync_commands=True)
 	command_register = []
 
 	@bot.event
@@ -145,27 +123,37 @@ if __name__ == "__main__":
 		guild = discord.utils.get(bot.guilds, id=guild_id)
 		debug(f"{bot.user} connected to Discord to {guild} (id: {guild_id}).", urgent=True)
 
-	@bot.command(name="islept", help="Records the number of hours you slept last night.")
-	async def save_hours(ctx, hours_slept: int, user_override=None):
-		sender = int(user_override) if user_override != None else ctx.message.author.id
-		if user_override != None and ctx.message.author.id != admin_user_id:
-			await ctx.send(f"ERROR: {ctx.message.author} does not have override permissions.")
+	@slash.slash(
+		name="slept",
+		description="Records the number of hours you slept last night",
+		options=[
+			manage_commands.create_option(
+				name="hours_slept",
+				description="Number of hours slept last night",
+				option_type=4,
+				required=True
+			),
+			manage_commands.create_option(
+				name="user_override",
+				description="The user to update hours for",
+				option_type=6,
+				required=False,
+			)
+		],
+		guild_ids=[guild_id]
+	)
+	@bot.command(name="slept", help="Records the number of hours you slept last night", aliases=["islept, s"])
+	async def save_hours(ctx, hours_slept: int, user_override: discord.Member=None):
+		sender = user_override.id if user_override != None else ctx.author.id
+		if user_override != None and ctx.author.id != admin_user_id:
+			await ctx.send(f"ERROR: {ctx.author} does not have override permissions.")
 			return
 		if not 0 <= hours_slept <= 11:
 			await ctx.send(f"ERROR: {hours_slept} hours is not in the range of 0 to 11 hours.")
 			return
 		
 		push_data(sender, hours_slept, data, data_file)
-		await ctx.message.add_reaction("✅")
 		await leaderboard(ctx, show_board=show_board_after_log)
-
-	@bot.command(name="slept", help="Alias for islept")
-	async def save_hours2(ctx, hours_slept: int, user_override=None):
-		await save_hours(ctx, hours_slept, user_override)
-	
-	@bot.command(name="s", help="Alias for islept")
-	async def save_hours3(ctx, hours_slept: int, user_override=None):
-		await save_hours(ctx, hours_slept, user_override)
 
 	@bot.command(name="stats", help="Shows sleep statistics for a user")
 	async def stats(ctx, target_id: int =None): #TODO: implement
@@ -240,7 +228,7 @@ if __name__ == "__main__":
 
 	@bot.command(name="register", help="Register a new temporary custom command")
 	async def register(ctx, keyword: str, output: str, contains="", startswith="", help="A temporary custom command"):
-		if startswith.startswith("!"):
+		if startswith.startswith(command_prefix):
 			await ctx.send("Triggers cannot begin with an exclamation mark.")
 			return
 
@@ -248,7 +236,7 @@ if __name__ == "__main__":
 		async def c(ctx, *args):
 			await ctx.send(output.format(*args))
 		
-		keyword = keyword.replace(" ", "").replace("!", "")
+		keyword = keyword.replace(" ", "").replace(command_prefix, "")
 		try:
 			bot.add_command(c)
 			command_register.append((c, contains, startswith))
@@ -260,7 +248,7 @@ if __name__ == "__main__":
 	async def on_message(message):
 		await bot.process_commands(message)
 		content = message.content
-		if content.startswith("!"):
+		if content.startswith(command_prefix):
 			return
 		for c, contains, startswith in command_register:
 			if startswith != "":
