@@ -251,6 +251,7 @@ if __name__ == "__main__":
 	@slash.slash(
 		name="quit",
 		description="Close the bot (admin-only)",
+		options=[],
 		guild_ids=[guild_id]
 	)
 	@bot.command(name="quit", help="Close the bot (admin-only)")
@@ -264,6 +265,7 @@ if __name__ == "__main__":
 	@slash.slash(
 		name="reload",
 		description="Reload the bot configuration",
+		options=[],
 		guild_ids=[guild_id]
 	)
 	@bot.command(name="reload", help="Reload configuration")
@@ -311,7 +313,7 @@ if __name__ == "__main__":
 		
 		try:
 			bot.add_command(c)
-			slash.add_slash_command(c, name=keyword, description=help, guild_ids=[guild_id])
+			slash.add_slash_command(c, name=keyword, description=help, options=[], guild_ids=[guild_id])
 			await slash.sync_all_commands()
 			command_register.append((c, contains))
 			await ctx.send(f"Registered new temporary command {keyword}.")
