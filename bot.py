@@ -333,8 +333,9 @@ if __name__ == "__main__":
 	async def on_message(message):
 		await bot.process_commands(message)
 		content = message.content
-		if message.author.bot or content.startswith(command_prefix) or content.startswith("/"):
+		if message.author.bot or content.startswith(command_prefix) or content.startswith("</"):
 			return
+		print(content)
 		for c, contains in command_register:
 			if contains != "":
 				if contains in message.content:
