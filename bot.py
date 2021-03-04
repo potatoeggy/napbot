@@ -142,7 +142,7 @@ if __name__ == "__main__":
 		],
 		guild_ids=[guild_id]
 	)
-	@bot.command(name="slept", help="Records the number of hours you slept last night", aliases=["islept, s"])
+	@bot.command(name="slept", help="Records the number of hours you slept last night", aliases=["islept", "s"])
 	async def save_hours(ctx, hours_slept: int, user_override: discord.Member=None):
 		sender = user_override.id if user_override != None else ctx.author.id
 		if user_override != None and ctx.author.id != admin_user_id:
@@ -194,6 +194,9 @@ if __name__ == "__main__":
 		guild_ids=[guild_id]
 	)
 	@bot.command(name="leaderboard", help="Show everyone's sleep stats", aliases=["board"])
+	async def board(ctx, board_type="weekly", show_board=True):
+		await leaderboard(ctx, board_type, show_board)
+
 	async def leaderboard(ctx, board_type="weekly", show_board=True): # TODO: implement
 		is_time_for_end_prize = False
 		is_time_for_end_prize = today().weekday() == 4 and all(str(today()) in i[1] for i in data.items())
@@ -218,6 +221,19 @@ if __name__ == "__main__":
 			embed.description += f"{prefix} <@{int(h[1])}> — {h[0]} hours{str(' ⏲️') if not str(today()) in data[h[1]] else ''}\n"
 		await ctx.send(embed=embed)
 	
+	@slash.slash(
+		name="tex",
+		description="Render your message in LaTeX",
+		options=[
+			manage_commands.create_option(
+				name="content",
+				description="The LaTeX to be rendered",
+				option_type=3,
+				required=True,
+			)
+		],
+		guild_ids=[guild_id]
+	)
 	@bot.command(name="tex", help="render math")
 	async def bot_tex(ctx, *, content: str):
 		await tex(ctx, content)
@@ -229,14 +245,20 @@ if __name__ == "__main__":
 		embed.set_image(url=f"{math_url}{content}")
 		await ctx.send(embed=embed)
 	
-	@bot.command(name="quit", help="Exit")
+	@slash.slash(
+		name="quit",
+		description="Close the bot (admin-only)",
+		guild_ids=[guild_id]
+	)
+	@bot.command(name="quit", help="Close the bot (admin-only)")
 	async def quit(ctx):
-		if ctx.message.author.id == admin_user_id:
+		if ctx.author.id == admin_user_id:
 			await ctx.send("Going to sleep now. Goodbye!")
 			await bot.logout()
 		else:
 			await ctx.send("You are not an administrator. Get lost.")
 
+	
 	@bot.command(name="reload", help="Reload configuration")
 	async def reload(ctx):
 		await ctx.send("Configuration reloaded.")
