@@ -258,7 +258,11 @@ if __name__ == "__main__":
 		else:
 			await ctx.send("You are not an administrator. Get lost.")
 
-	
+	@slash.slash(
+		name="reload",
+		description="Reload the bot configuration",
+		guild_ids=[guild_id]
+	)
 	@bot.command(name="reload", help="Reload configuration")
 	async def reload(ctx):
 		await ctx.send("Configuration reloaded.")
@@ -267,7 +271,7 @@ if __name__ == "__main__":
 	@bot.command(name="register", help="Register a new temporary custom command")
 	async def register(ctx, keyword: str, output: str, contains="", startswith="", help="A temporary custom command"):
 		if startswith.startswith(command_prefix):
-			await ctx.send("Triggers cannot begin with an exclamation mark.")
+			await ctx.send("Triggers cannot begin with the command prefix.")
 			return
 
 		@commands.command(name=keyword, help=help)
