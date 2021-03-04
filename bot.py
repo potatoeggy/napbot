@@ -155,9 +155,22 @@ if __name__ == "__main__":
 		push_data(sender, hours_slept, data, data_file)
 		await leaderboard(ctx, show_board=show_board_after_log)
 
-	@bot.command(name="stats", help="Shows sleep statistics for a user")
-	async def stats(ctx, target_id: int =None): #TODO: implement
-		sender = ctx.message.author if target_id == None else await bot.fetch_user(target_id)
+	@slash.slash(
+		name="stats",
+		description="Shows sleep statistics (you by default)",
+		options=[
+			manage_commands.create_option(
+				name="target_id",
+				description="The user to get statistics for instead",
+				option_type=6,
+				required=False,
+			)
+		],
+		guild_ids=[guild_id]
+	)
+	@bot.command(name="stats", help="Shows sleep statistics (you by default)", aliases=["me"])
+	async def stats(ctx, user: discord.Member =None):
+		sender = ctx.author if user is None else user
 		embed = discord.Embed(title=f"Sleep statistics for {sender.name}:")
 		embed.add_field(name="Cumulative hours slept:", value=cumulative(sender.id, data), inline=False)
 		embed.add_field(name="Average of cumulative hours slept:", value=cumulative_average(sender.id, data), inline=False)
@@ -166,19 +179,22 @@ if __name__ == "__main__":
 		embed.add_field(name="Hours slept last night:", value=hours_today(sender.id, data), inline=False)
 		await ctx.send(embed=embed)
 
-	@bot.command(name="me", help="Alias for stats <your_id>")
-	async def stats2(ctx):
-		await stats(ctx)
-
-	@bot.command(name="leaderboard", help="Show everyone's weekly sleep stats")
-	async def board2(ctx, board="weekly"):
-		await leaderboard(ctx, board)
-
-	@bot.command(name="board", help="Alias for leaderboard")
-	async def board(ctx, board="weekly"):
-		await leaderboard(ctx, board)
-	
-	async def leaderboard(ctx, board="weekly", show_board=True): # TODO: implement
+	@slash.slash(
+		name="board",
+		description="Show everyone's sleep stats",
+		options=[
+			manage_commands.create_option(
+				name="board_type",
+				description="Type of statistic to get",
+				option_type=3,
+				required=False,
+				choices=["weekly"]
+			)
+		],
+		guild_ids=[guild_id]
+	)
+	@bot.command(name="leaderboard", help="Show everyone's sleep stats", aliases=["board"])
+	async def leaderboard(ctx, board_type="weekly", show_board=True): # TODO: implement
 		is_time_for_end_prize = False
 		is_time_for_end_prize = today().weekday() == 4 and all(str(today()) in i[1] for i in data.items())
 		if not show_board and not is_time_for_end_prize:
