@@ -314,8 +314,8 @@ if __name__ == "__main__":
 		try:
 			bot.add_command(c)
 			slash.add_slash_command(c, name=keyword, description=help, options=[], guild_ids=[guild_id])
-			await slash.sync_all_commands()
 			command_register.append((c, contains))
+			await slash.sync_all_commands()
 			await ctx.send(f"Registered new temporary command {keyword}.")
 		except commands.CommandRegistrationError:
 			await ctx.send(f"The keyword `{keyword}` is already registered as a command and cannot be overwritten.")
@@ -335,7 +335,6 @@ if __name__ == "__main__":
 		content = message.content
 		if message.author.bot or content.startswith(command_prefix) or content.startswith("</"):
 			return
-		print(content)
 		for c, contains in command_register:
 			if contains != "":
 				if contains in message.content:
