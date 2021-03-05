@@ -369,7 +369,7 @@ if __name__ == "__main__":
 			await ctx.send("You are not in a voice channel.")
 			return 1
 		
-		vc = ctx.voice_client
+		vc = ctx.guild.voice_client
 		if vc:
 			if vc.channel.id == channel.id:
 				return
@@ -407,7 +407,7 @@ if __name__ == "__main__":
 		else:
 			return await ctx.send(f"`{' '.join(query)}` returned no results.")
 		
-		vc = ctx.voice_client
+		vc = ctx.guild.voice_client
 		if not vc:
 			vc = await connect(ctx)
 		await ctx.send(f"Playing {name}.")
