@@ -420,6 +420,7 @@ if __name__ == "__main__":
 			await asyncio.sleep(1)
 		await vc.disconnect()
 		await bot.change_presence(activity=None)
+	
 	@slash.slash(
 		name="search",
 		description="Search a Moosic",
@@ -438,7 +439,7 @@ if __name__ == "__main__":
 		name = []
 		for f in moosics:
 			for s in args:
-				if not s in f:
+				if not s in moosics[f][1]:
 					break
 			else:
 				name.append(moosics[f][0].replace(".mp3", ""))
