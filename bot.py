@@ -407,16 +407,17 @@ if __name__ == "__main__":
 		else:
 			return await ctx.send(f"`{' '.join(query)}` returned no results.")
 		
-		vc = ctx.guild.voice_client
-		if not vc:
-			vc = await connect(ctx)
-		else:
-			await stop(ctx, output=False)
+		vc = await connect(ctx)
+		if vc == 1:
+			return
+
 		await ctx.send(f"Playing {name}.")
+		await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name=name))
 		vc.play(discord.FFmpegPCMAudio(executable="/usr/bin/ffmpeg", source=source))
 		while vc.is_playing():
 			await asyncio.sleep(1)
 		await vc.disconnect()
+		await bot.change_presence(activity=None)
 	
 	@slash.slash(
 		name="stop",
@@ -425,13 +426,12 @@ if __name__ == "__main__":
 		guild_ids=[guild_id]
 	)
 	@bot.command(name="stop", help="Stop a Moosic")
-	async def stop(ctx, output=True):
+	async def stop(ctx):
 		vc = ctx.guild.voice_client
 		if not vc:
-			if output:
-				await ctx.send("No Moosic to stop.")
-			return
+			return await ctx.send("No Moosic to stop.")
 		await vc.disconnect()
+		await bot.change_presence(activity=None)
 
 	@bot.event
 	async def on_command(message):
