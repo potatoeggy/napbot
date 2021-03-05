@@ -337,7 +337,7 @@ if __name__ == "__main__":
 			return
 		for c, contains in command_register:
 			if contains != "":
-				if contains in message.content:
+				if contains in message.content.lower():
 					await c(message.channel, *(content.split()))
 
 		# non-command latex support
