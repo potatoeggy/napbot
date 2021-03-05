@@ -6,11 +6,11 @@ import json
 import discord
 import discord_slash
 from discord.ext import commands, tasks
-from discord_slash import SlashCommand
+from discord_slash import SlashCommand, cog_ext
 from discord_slash.utils import manage_commands
 
 import traceback
-
+import asyncio
 import requests
 import time
 import datetime
@@ -20,362 +20,426 @@ VERBOSE = True
 
 
 def debug(string, urgent=False):
-    if urgent:
-        print(string)
-    elif VERBOSE:
-        print("DEBUG:", string)
+	if urgent:
+		print(string)
+	elif VERBOSE:
+		print("DEBUG:", string)
 
 
 def show_help():  # TODO: consider adding
-    debug("Exiting for showing help", urgent=True)
-    exit(0)
+	debug("Exiting for showing help", urgent=True)
+	exit(0)
 
 
 def today():
-    return datetime.date.today()
+	return datetime.date.today()
 
 
 def last_saturday():
-    offset = datetime.timedelta((today().weekday()+1) % 7 + 1)
-    if today().weekday() == 5:
-        offset = datetime.timedelta(days=0)
-    return today() - offset
+	offset = datetime.timedelta((today().weekday()+1) % 7 + 1)
+	if today().weekday() == 5:
+		offset = datetime.timedelta(days=0)
+	return today() - offset
 
 
 def cumulative(discord_id: int, data: dict):
-    return sum(data[str(discord_id)].values())
+	return sum(data[str(discord_id)].values())
 
 
 def cumulative_average(discord_id: int, data: dict):
-    return round(cumulative(discord_id, data) / len(data[str(discord_id)]), 2)
+	return round(cumulative(discord_id, data) / len(data[str(discord_id)]), 2)
 
 
 def cumulative_month(discord_id: int, data: dict):
-    return sum(dict(filter(lambda p: datetime.date.fromisoformat(p[0]).month == today().month and datetime.date.fromisoformat(p[0]).year == today().year, data[str(discord_id)].items())).values())
+	return sum(dict(filter(lambda p: datetime.date.fromisoformat(p[0]).month == today().month and datetime.date.fromisoformat(p[0]).year == today().year, data[str(discord_id)].items())).values())
 
 
 def cumulative_week(discord_id: int, data: dict):
-    return sum(dict(filter(lambda p: datetime.date.fromisoformat(p[0]) >= last_saturday(), data[str(discord_id)].items())).values())
+	return sum(dict(filter(lambda p: datetime.date.fromisoformat(p[0]) >= last_saturday(), data[str(discord_id)].items())).values())
 
 
 def hours_today(discord_id: int, data: dict):
-    return data[str(discord_id)][str(today())] if str(today()) in data[str(discord_id)] else 0
+	return data[str(discord_id)][str(today())] if str(today()) in data[str(discord_id)] else 0
 
 
 def push_data(discord_id: int, hours: int, data, data_file):  # TODO: add previous day support
-    discord_id = str(discord_id)
-    data[discord_id][str(today())] = hours
-    with open(data_file, "w") as file:
-        file.write(json.dumps(data, indent=4))
+	discord_id = str(discord_id)
+	data[discord_id][str(today())] = hours
+	with open(data_file, "w") as file:
+		file.write(json.dumps(data, indent=4))
 
 
 def init():
-    # TODO: import from env vars
-    # load conf file
-    debug("Reading configuration...", urgent=True)
-    config_file = os.path.join(sys.path[0], "config.json")
-    try:
-        config_file = sys.argv[sys.argv.index("--config") + 1]
-    except ValueError:
-        pass  # user did not specify custom conf location
-    except IndexError:
-        show_help()
+	# TODO: import from env vars
+	# load conf file
+	debug("Reading configuration...", urgent=True)
+	config_file = os.path.join(sys.path[0], "config.json")
+	try:
+		config_file = sys.argv[sys.argv.index("--config") + 1]
+	except ValueError:
+		pass  # user did not specify custom conf location
+	except IndexError:
+		show_help()
 
-    jsondict = {}
-    try:
-        with open(config_file, "r") as file:
-            data = file.read()
-        jsondict = json.loads(data)
-    except EnvironmentError:
-        # config file is probably not found and so will use fallback
-        debug("Could not find config file.")
+	jsondict = {}
+	try:
+		with open(config_file, "r") as file:
+			data = file.read()
+		jsondict = json.loads(data)
+	except EnvironmentError:
+		# config file is probably not found and so will use fallback
+		debug("Could not find config file.")
 
-    def check_config(key, fallback=None):
-        result = jsondict[key] if key in jsondict else fallback
-        args_key = "--" + key.replace("_", "-")
-        try:
-            if type(fallback) is not bool:
-                result = type(fallback)(sys.argv[sys.argv.index(args_key) + 1])
-            elif args_key in sys.argv:
-                result = True
-        except ValueError:
-            pass  # user did not specify conf in command line
-        except IndexError:
-            show_help()
-        return result
+	def check_config(key, fallback=None):
+		result = jsondict[key] if key in jsondict else fallback
+		args_key = "--" + key.replace("_", "-")
+		try:
+			if type(fallback) is not bool:
+				result = type(fallback)(sys.argv[sys.argv.index(args_key) + 1])
+			elif args_key in sys.argv:
+				result = True
+		except ValueError:
+			pass  # user did not specify conf in command line
+		except IndexError:
+			show_help()
+		return result
 
-    # mandatory fields
-    discord_id = check_config("discord_id")
-    discord_token = check_config("discord_token")
-    discord_guild = check_config("discord_guild")
-    admin_user_id = check_config("admin_user_id")
-    show_board_after_log = check_config("show_board_after_log", True)
-    VERBOSE = check_config("verbose", False)
+	# mandatory fields
+	discord_id = check_config("discord_id")
+	discord_token = check_config("discord_token")
+	discord_guild = check_config("discord_guild")
+	admin_user_id = check_config("admin_user_id")
+	show_board_after_log = check_config("show_board_after_log", True)
+	walk_path = check_config("walk_path", "/media/Moosic/")
+	VERBOSE = check_config("verbose", False)
 
-    # load saved data
-    debug("Reading data...")
-    data_file = check_config(
-        "data_file", os.path.join(sys.path[0], "data.json"))
-    data = {}
-    try:
-        with open(data_file, "r") as file:
-            data = file.read()
-        data = json.loads(data)
-    except EnvironmentError:
-        # data file is probably not found and so will crash
-        debug("Could not find data file. Exiting...", urgent=True)
-        exit()
+	# load saved data
+	debug("Reading data...")
+	data_file = check_config(
+		"data_file", os.path.join(sys.path[0], "data.json"))
+	data = {}
+	try:
+		with open(data_file, "r") as file:
+			data = file.read()
+		data = json.loads(data)
+	except EnvironmentError:
+		# data file is probably not found and so will crash
+		debug("Could not find data file. Exiting...", urgent=True)
+		exit()
+	
+	moosics = {}
+	for root, dirs, files in os.walk(walk_path):
+			for name in files:
+				if name.endswith(".mp3"):
+					moosics[name.lower()] = (name, os.path.join(root, name))
 
-    return discord_guild, discord_token, data, data_file, admin_user_id, show_board_after_log
+	return discord_guild, discord_token, data, data_file, admin_user_id, show_board_after_log, moosics
 
 
 if __name__ == "__main__":
-    guild_id, client_token, data, data_file, admin_user_id, show_board_after_log = init()
-    command_prefix = "."
-    bot = commands.Bot(command_prefix=command_prefix,
-                       intents=discord.Intents.all())
-    slash = SlashCommand(bot, sync_commands=True)
-    command_register = []
+	guild_id, client_token, data, data_file, admin_user_id, show_board_after_log, moosics = init()
+	command_prefix = "."
+	bot = commands.Bot(command_prefix=command_prefix,
+					   intents=discord.Intents.all())
+	slash = SlashCommand(bot, sync_commands=True)
+	command_register = []
 
-    @bot.event
-    async def on_ready():
-        guild = discord.utils.get(bot.guilds, id=guild_id)
-        debug(
-            f"{bot.user} connected to Discord to {guild} (id: {guild_id}).", urgent=True)
+	@bot.event
+	async def on_ready():
+		guild = discord.utils.get(bot.guilds, id=guild_id)
+		debug(
+			f"{bot.user} connected to Discord to {guild} (id: {guild_id}).", urgent=True)
 
-    @slash.slash(
-        name="slept",
-        description="Records the number of hours you slept last night",
-        options=[
-            manage_commands.create_option(
-                    name="hours_slept",
-                    description="Number of hours slept last night",
-                    option_type=4,
-                    required=True
-            ),
-            manage_commands.create_option(
-                name="user_override",
-                description="The user to update hours for",
-                option_type=6,
-                required=False,
-            )
-        ],
-        guild_ids=[guild_id]
-    )
-    @bot.command(name="slept", help="Records the number of hours you slept last night", aliases=["islept", "s"])
-    async def save_hours(ctx, hours_slept: int, user_override: discord.Member = None):
-        sender = user_override.id if user_override != None else ctx.author.id
-        if user_override != None and ctx.author.id != admin_user_id:
-            await ctx.send(f"ERROR: {ctx.author} does not have override permissions.")
-            return
-        if not 0 <= hours_slept <= 11:
-            await ctx.send(f"ERROR: {hours_slept} hours is not in the range of 0 to 11 hours.")
-            return
+	@slash.slash(
+		name="slept",
+		description="Records the number of hours you slept last night",
+		options=[
+			manage_commands.create_option(
+					name="hours_slept",
+					description="Number of hours slept last night",
+					option_type=4,
+					required=True
+			),
+			manage_commands.create_option(
+				name="user_override",
+				description="The user to update hours for",
+				option_type=6,
+				required=False,
+			)
+		],
+		guild_ids=[guild_id]
+	)
+	@bot.command(name="slept", help="Records the number of hours you slept last night", aliases=["islept", "s"])
+	async def save_hours(ctx, hours_slept: int, user_override: discord.Member = None):
+		sender = user_override.id if user_override != None else ctx.author.id
+		if user_override != None and ctx.author.id != admin_user_id:
+			await ctx.send(f"ERROR: {ctx.author} does not have override permissions.")
+			return
+		if not 0 <= hours_slept <= 11:
+			await ctx.send(f"ERROR: {hours_slept} hours is not in the range of 0 to 11 hours.")
+			return
 
-        push_data(sender, hours_slept, data, data_file)
-        await leaderboard(ctx, show_board=show_board_after_log)
+		push_data(sender, hours_slept, data, data_file)
+		await leaderboard(ctx, show_board=show_board_after_log)
 
-    @slash.slash(
-        name="stats",
-        description="Shows sleep statistics (you by default)",
-        options=[
-            manage_commands.create_option(
-                    name="target_id",
-                    description="The user to get statistics for instead",
-                    option_type=6,
-                    required=False,
-            )
-        ],
-        guild_ids=[guild_id]
-    )
-    @bot.command(name="stats", help="Shows sleep statistics (you by default)", aliases=["me"])
-    async def stats(ctx, user: discord.Member = None):
-        sender = ctx.author if user is None else user
-        embed = discord.Embed(title=f"Sleep statistics for {sender.name}:")
-        embed.add_field(name="Cumulative hours slept:",
-                        value=cumulative(sender.id, data), inline=False)
-        embed.add_field(name="Average of cumulative hours slept:",
-                        value=cumulative_average(sender.id, data), inline=False)
-        embed.add_field(name="Hours slept this month:",
-                        value=cumulative_month(sender.id, data), inline=False)
-        embed.add_field(name="Hours slept this week:",
-                        value=cumulative_week(sender.id, data), inline=False)
-        embed.add_field(name="Hours slept last night:",
-                        value=hours_today(sender.id, data), inline=False)
-        await ctx.send(embed=embed)
+	@slash.slash(
+		name="stats",
+		description="Shows sleep statistics (you by default)",
+		options=[
+			manage_commands.create_option(
+					name="target_id",
+					description="The user to get statistics for instead",
+					option_type=6,
+					required=False,
+			)
+		],
+		guild_ids=[guild_id]
+	)
+	@bot.command(name="stats", help="Shows sleep statistics (you by default)", aliases=["me"])
+	async def stats(ctx, user: discord.Member = None):
+		sender = ctx.author if user is None else user
+		embed = discord.Embed(title=f"Sleep statistics for {sender.name}:")
+		embed.add_field(name="Cumulative hours slept:",
+						value=cumulative(sender.id, data), inline=False)
+		embed.add_field(name="Average of cumulative hours slept:",
+						value=cumulative_average(sender.id, data), inline=False)
+		embed.add_field(name="Hours slept this month:",
+						value=cumulative_month(sender.id, data), inline=False)
+		embed.add_field(name="Hours slept this week:",
+						value=cumulative_week(sender.id, data), inline=False)
+		embed.add_field(name="Hours slept last night:",
+						value=hours_today(sender.id, data), inline=False)
+		await ctx.send(embed=embed)
 
-    @slash.slash(
-        name="board",
-        description="Show everyone's sleep stats",
-        options=[
-            manage_commands.create_option(
-                    name="board_type",
-                    description="Type of statistic to get",
-                    option_type=3,
-                    required=False,
-                    choices=["weekly"]
-            )
-        ],
-        guild_ids=[guild_id]
-    )
-    @bot.command(name="leaderboard", help="Show everyone's sleep stats", aliases=["board"])
-    async def board(ctx, board_type="weekly", show_board=True):
-        await leaderboard(ctx, board_type, show_board)
+	@slash.slash(
+		name="board",
+		description="Show everyone's sleep stats",
+		options=[
+			manage_commands.create_option(
+					name="board_type",
+					description="Type of statistic to get",
+					option_type=3,
+					required=False,
+					choices=["weekly"]
+			)
+		],
+		guild_ids=[guild_id]
+	)
+	@bot.command(name="leaderboard", help="Show everyone's sleep stats", aliases=["board"])
+	async def board(ctx, board_type="weekly", show_board=True):
+		await leaderboard(ctx, board_type, show_board)
 
-    async def leaderboard(ctx, board_type="weekly", show_board=True):  # TODO: implement
-        is_time_for_end_prize = False
-        is_time_for_end_prize = today().weekday() == 4 and all(
-            str(today()) in i[1] for i in data.items())
-        if not show_board and not is_time_for_end_prize:
-            return
+	async def leaderboard(ctx, board_type="weekly", show_board=True):  # TODO: implement
+		is_time_for_end_prize = False
+		is_time_for_end_prize = today().weekday() == 4 and all(
+			str(today()) in i[1] for i in data.items())
+		if not show_board and not is_time_for_end_prize:
+			return
 
-        # TODO: implement non-weekly leaderboards
-        weekly = []
-        days_remaining = 7-(today()-last_saturday()).days
-        for i, d in data.items():
-            weekly.append((cumulative_week(str(i), data), i))
-        weekly.sort(reverse=True)
-        embed = discord.Embed(
-            title=f"Leaderboard for {last_saturday()} to {today()}:")
+		# TODO: implement non-weekly leaderboards
+		weekly = []
+		days_remaining = 7-(today()-last_saturday()).days
+		for i, d in data.items():
+			weekly.append((cumulative_week(str(i), data), i))
+		weekly.sort(reverse=True)
+		embed = discord.Embed(
+			title=f"Leaderboard for {last_saturday()} to {today()}:")
 
-        embed.description = f"{str('🎉')} Congratulations, {', '.join(f'<@{i[1]}>' for i in filter(lambda h: weekly[0][0] == h[0], weekly))}!\n\n" if is_time_for_end_prize else f"{days_remaining} days remaining.\n\n"
-        top_user = []
-        for i, h in enumerate(weekly):
-            prefix = f"{i+1}."
-            if is_time_for_end_prize:
-                if h[0] == weekly[0][0]:
-                    prefix = str("🏅")
-            embed.description += f"{prefix} <@{int(h[1])}> — {h[0]} hours{str(' ⏲️') if not str(today()) in data[h[1]] else ''}\n"
-        await ctx.send(embed=embed)
+		embed.description = f"{str('🎉')} Congratulations, {', '.join(f'<@{i[1]}>' for i in filter(lambda h: weekly[0][0] == h[0], weekly))}!\n\n" if is_time_for_end_prize else f"{days_remaining} days remaining.\n\n"
+		top_user = []
+		for i, h in enumerate(weekly):
+			prefix = f"{i+1}."
+			if is_time_for_end_prize:
+				if h[0] == weekly[0][0]:
+					prefix = str("🏅")
+			embed.description += f"{prefix} <@{int(h[1])}> — {h[0]} hours{str(' ⏲️') if not str(today()) in data[h[1]] else ''}\n"
+		await ctx.send(embed=embed)
 
-    @slash.slash(
-        name="tex",
-        description="Render your message in LaTeX",
-        options=[
-            manage_commands.create_option(
-                    name="content",
-                    description="The LaTeX to be rendered",
-                    option_type=3,
-                    required=True,
-            )
-        ],
-        guild_ids=[guild_id]
-    )
-    @bot.command(name="tex", help="render math")
-    async def bot_tex(ctx, *, content: str):
-        await tex(ctx, content)
+	@slash.slash(
+		name="tex",
+		description="Render your message in LaTeX",
+		options=[
+			manage_commands.create_option(
+					name="content",
+					description="The LaTeX to be rendered",
+					option_type=3,
+					required=True,
+			)
+		],
+		guild_ids=[guild_id]
+	)
+	@bot.command(name="tex", help="render math")
+	async def bot_tex(ctx, *, content: str):
+		await tex(ctx, content)
 
-    async def tex(ctx, content: str):
-        content = content.replace(" ", r"&space;").replace(
-            "+", r"&plus;").replace("\n", "")
-        math_url = "https://latex.codecogs.com/png.latex?\\bg_white&space;\\LARGE&space;"
-        embed = discord.Embed()
-        embed.set_image(url=f"{math_url}{content}")
-        await ctx.send(embed=embed)
+	async def tex(ctx, content: str):
+		content = content.replace(" ", r"&space;").replace(
+			"+", r"&plus;").replace("\n", "")
+		math_url = "https://latex.codecogs.com/png.latex?\\bg_white&space;\\LARGE&space;"
+		embed = discord.Embed()
+		embed.set_image(url=f"{math_url}{content}")
+		await ctx.send(embed=embed)
 
-    @slash.slash(
-        name="quit",
-        description="Close the bot (admin-only)",
-        options=[],
-        guild_ids=[guild_id]
-    )
-    @bot.command(name="quit", help="Close the bot (admin-only)")
-    async def quit(ctx):
-        if ctx.author.id == admin_user_id:
-            await ctx.send("Going to sleep now. Goodbye!")
-            await bot.logout()
-        else:
-            await ctx.send("You are not an administrator. Get lost.")
+	@slash.slash(
+		name="quit",
+		description="Close the bot (admin-only)",
+		options=[],
+		guild_ids=[guild_id]
+	)
+	@bot.command(name="quit", help="Close the bot (admin-only)")
+	async def quit(ctx):
+		if ctx.author.id == admin_user_id:
+			await ctx.send("Going to sleep now. Goodbye!")
+			await bot.logout()
+		else:
+			await ctx.send("You are not an administrator. Get lost.")
 
-    @slash.slash(
-        name="reload",
-        description="Reload the bot configuration",
-        options=[],
-        guild_ids=[guild_id]
-    )
-    @bot.command(name="reload", help="Reload configuration")
-    async def reload(ctx):
-        await ctx.send("Configuration reloaded.")
-        exit(1)
+	@slash.slash(
+		name="reload",
+		description="Reload the bot configuration",
+		options=[],
+		guild_ids=[guild_id]
+	)
+	@bot.command(name="reload", help="Reload configuration")
+	async def reload(ctx):
+		await ctx.send("Configuration reloaded.")
+		exit(1)
 
-    @slash.slash(
-        name="register",
-        description="Register a temporary custom command",
-        options=[
-            manage_commands.create_option(
-                    name="keyword",
-                    description="The trigger keyword to use",
-                    option_type=3,
-                    required=True
-            ),
-            manage_commands.create_option(
-                name="output",
-                description="The output to print",
-                option_type=3,
-                required=True
-            ),
-            manage_commands.create_option(
-                name="contains",
-                description="Run if this string is detected in any message",
-                option_type=3,
-                required=False
-            ),
-            manage_commands.create_option(
-                name="help",
-                description="Help text",
-                option_type=3,
-                required=False
-            )
-        ],
-        guild_ids=[guild_id]
-    )
-    @bot.command(name="register", help="Register a new temporary custom command")
-    async def register(ctx, keyword: str, output: str, contains="", help="A temporary custom command"):
-        keyword = keyword.replace(" ", "").replace(command_prefix, "")
+	@slash.slash(
+		name="register",
+		description="Register a temporary custom command",
+		options=[
+			manage_commands.create_option(
+					name="keyword",
+					description="The trigger keyword to use",
+					option_type=3,
+					required=True
+			),
+			manage_commands.create_option(
+				name="output",
+				description="The output to print",
+				option_type=3,
+				required=True
+			),
+			manage_commands.create_option(
+				name="contains",
+				description="Run if this string is detected in any message",
+				option_type=3,
+				required=False
+			),
+			manage_commands.create_option(
+				name="help",
+				description="Help text",
+				option_type=3,
+				required=False
+			)
+		],
+		guild_ids=[guild_id]
+	)
+	@bot.command(name="register", help="Register a new temporary custom command")
+	async def register(ctx, keyword: str, output: str, contains="", help="A temporary custom command"):
+		keyword = keyword.replace(" ", "").replace(command_prefix, "")
 
-        @commands.command(name=keyword, help=help)
-        async def c(ctx, *args):
-            await ctx.send(output.format(*args))
+		@commands.command(name=keyword, help=help)
+		async def c(ctx, *args):
+			await ctx.send(output.format(*args))
 
-        try:
-            bot.add_command(c)
-            slash.add_slash_command(
-                c, name=keyword, description=help, options=[], guild_ids=[guild_id])
-            command_register.append((c, contains))
-            await slash.sync_all_commands()
-            await ctx.send(f"Registered new temporary command {keyword}.")
-        except commands.CommandRegistrationError:
-            await ctx.send(f"The keyword `{keyword}` is already registered as a command and cannot be overwritten.")
-        except discord_slash.error.DuplicateCommand:
-            await ctx.send(f"The keyword `{keyword}` is already registered as a remote command and cannot be overwritten.")
-        except Exception:
-            traceback.print_exc()
-            await ctx.send(f"Something broke — don't do it again.")
+		try:
+			bot.add_command(c)
+			slash.add_slash_command(
+				c, name=keyword, description=help, options=[], guild_ids=[guild_id])
+			command_register.append((c, contains))
+			await slash.sync_all_commands()
+			await ctx.send(f"Registered new temporary command {keyword}.")
+		except commands.CommandRegistrationError:
+			await ctx.send(f"The keyword `{keyword}` is already registered as a command and cannot be overwritten.")
+		except discord_slash.error.DuplicateCommand:
+			await ctx.send(f"The keyword `{keyword}` is already registered as a remote command and cannot be overwritten.")
+		except Exception:
+			traceback.print_exc()
+			await ctx.send(f"Something broke — don't do it again.")
+	
+	# play, stop
+	# later: queue, skip
+	async def connect(ctx):
+		channel = None
+		try:
+			channel = ctx.author.voice.channel
+		except AttributeError:
+			await ctx.send("You are not in a voice channel.")
+			return 1
+		
+		vc = ctx.voice_client
+		if vc:
+			if vc.channel.id == channel.id:
+				return
+			return await vc.move_to(channel)
+		else:
+			return await channel.connect()
+		return
+	
+	@slash.slash(
+		name="play",
+		description="Play a Moosic",
+		options=[
+			manage_commands.create_option(
+				name="query",
+				description="Title and/or author to search for",
+				option_type=3,
+				required=True
+			)
+		],
+		guild_ids=[guild_id]
+	)
+	@bot.command(name="play", help="Play a Moosic")
+	async def play(ctx, *query):
+		args = " ".join(query).lower().split(" ")
+		source = None
+		name = None
+		for f in moosics:
+			for s in args:
+				if not s in f:
+					break
+			else:
+				source = moosics[f][1]
+				name = moosics[f][0].replace(".mp3", "")
+				break
+		else:
+			return await ctx.send(f"`{' '.join(query)}` returned no results.")
+		
+		vc = ctx.voice_client
+		if not vc:
+			vc = await connect(ctx)
+		await ctx.send(f"Playing {name}.")
+		vc.play(discord.FFmpegPCMAudio(executable="/usr/bin/ffmpeg", source=source))
+		while vc.is_playing():
+			time.sleep(1)
+		await vc.disconnect()
 
-    @bot.event
-    async def on_command(message):
-        await message.reply("WARNING: Traditional prefixed commands are deprecated and will be removed in a future update. Please switch to slash commands instead.")
+	@bot.event
+	async def on_command(message):
+		await message.reply("WARNING: Traditional prefixed commands are deprecated and will be removed in a future update. Please switch to slash commands instead.")
 
-    @bot.event
-    async def on_message(message):
-        await bot.process_commands(message)
-        content = message.content
-        if message.author.bot or content.startswith(command_prefix) or content.startswith("</"):
-            return
-        for c, contains in command_register:
-            if contains != "":
-                if contains in message.content.lower():
-                    await c(message.channel, *(content.split()))
+	@bot.event
+	async def on_message(message):
+		await bot.process_commands(message)
+		content = message.content
+		if message.author.bot or content.startswith(command_prefix) or content.startswith("</"):
+			return
+		for c, contains in command_register:
+			if contains != "":
+				if contains in message.content.lower():
+					await c(message.channel, *(content.split()))
 
-        # non-command latex support
-        if not "$$" in content:
-            return
-        content = content.split("$$")
+		# non-command latex support
+		if not "$$" in content:
+			return
+		content = content.split("$$")
 
-        if len(content) < 3:
-            return
-        for i, s in enumerate(content):
-            if i % 2 == 1:
-                await tex(message.channel, s)
+		if len(content) < 3:
+			return
+		for i, s in enumerate(content):
+			if i % 2 == 1:
+				await tex(message.channel, s)
 
-    bot.run(client_token)
+	bot.run(client_token)
