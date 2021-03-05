@@ -442,12 +442,12 @@ if __name__ == "__main__":
 					break
 			else:
 				name.append(moosics[f][0].replace(".mp3", ""))
-				break
-		else:
+		if len(name) == 0:
 			return await ctx.send(f"`{' '.join(query)}` returned no results.")
-		embed = discord.Embed(title=f"Moosic containing '{' '.join(query)}'")
+		embed = discord.Embed(title=f"Moosic containing '{' '.join(query)}'", description="")
 		for i, n in enumerate(name):
-			embed.description += f"{i}. {n}\n"
+			if i > 5: break
+			embed.description += f"{i+1}. {n}\n"
 		await ctx.send(embed=embed)
 	
 	@slash.slash(
