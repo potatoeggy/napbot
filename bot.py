@@ -373,7 +373,7 @@ if __name__ == "__main__":
 		if vc:
 			if vc.channel.id == channel.id:
 				vc.stop()
-				return
+				return vc
 			return await vc.move_to(channel)
 		else:
 			return await channel.connect()
