@@ -410,10 +410,27 @@ if __name__ == "__main__":
 		vc = ctx.guild.voice_client
 		if not vc:
 			vc = await connect(ctx)
+		else:
+			await stop(ctx, output=False)
 		await ctx.send(f"Playing {name}.")
 		vc.play(discord.FFmpegPCMAudio(executable="/usr/bin/ffmpeg", source=source))
 		while vc.is_playing():
-			time.sleep(1)
+			await asyncio.sleep(1)
+		await vc.disconnect()
+	
+	@slash.slash(
+		name="stop",
+		description="Stop a Moosic",
+		options=[],
+		guild_ids=[guild_id]
+	)
+	@bot.command(name="stop", help="Stop a Moosic")
+	async def stop(ctx, output=True):
+		vc = ctx.guild.voice_client
+		if not vc:
+			if output:
+				await ctx.send("No Moosic to stop.")
+			return
 		await vc.disconnect()
 
 	@bot.event
