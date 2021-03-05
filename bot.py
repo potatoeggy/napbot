@@ -372,6 +372,7 @@ if __name__ == "__main__":
 		vc = ctx.guild.voice_client
 		if vc:
 			if vc.channel.id == channel.id:
+				vc.stop()
 				return
 			return await vc.move_to(channel)
 		else:
