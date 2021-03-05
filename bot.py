@@ -439,7 +439,7 @@ if __name__ == "__main__":
 		name = []
 		for f in moosics:
 			for s in args:
-				if not s in moosics[f][1]:
+				if not s in moosics[f][1].lower():
 					break
 			else:
 				name.append(moosics[f][0].replace(".mp3", ""))
