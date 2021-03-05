@@ -420,6 +420,35 @@ if __name__ == "__main__":
 			await asyncio.sleep(1)
 		await vc.disconnect()
 		await bot.change_presence(activity=None)
+	@slash.slash(
+		name="search",
+		description="Search a Moosic",
+		options=[
+			manage_commands.create_option(
+				name="query",
+				description="Title and/or author to search for",
+				option_type=3,
+				required=True
+			)
+		]
+	)
+	@bot.command(name="search", help="Search a Moosic")
+	async def search(ctx, *query):
+		args = " ".join(query).lower().split(" ")
+		name = []
+		for f in moosics:
+			for s in args:
+				if not s in f:
+					break
+			else:
+				name.append(moosics[f][0].replace(".mp3", ""))
+				break
+		else:
+			return await ctx.send(f"`{' '.join(query)}` returned no results.")
+		embed = discord.Embed(title=f"Moosic containing '{' '.join(query)}'")
+		for i, n in enumerate(name):
+			embed.description += f"{i}. {n}\n"
+		await ctx.send(embed=embed)
 	
 	@slash.slash(
 		name="stop",
