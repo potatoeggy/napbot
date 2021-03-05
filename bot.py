@@ -414,7 +414,7 @@ if __name__ == "__main__":
 
 		vc = await connect(ctx)
 		vc.play(discord.FFmpegPCMAudio(executable="/usr/bin/ffmpeg", source=source))
-		await ctx.send(f"Playing {name}.")
+		await ctx.send(f"Playing **{name}**.")
 		await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name=name))
 		while vc.is_playing():
 			await asyncio.sleep(1)
