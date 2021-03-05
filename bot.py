@@ -327,7 +327,7 @@ if __name__ == "__main__":
 
 	@bot.event
 	async def on_command(message):
-		await message.channel.send("WARNING: Traditional prefixed commands are deprecated and will be removed in a future update. Please switch to slash commands instead.")
+		await message.reply("WARNING: Traditional prefixed commands are deprecated and will be removed in a future update. Please switch to slash commands instead.")
 
 	@bot.event
 	async def on_message(message):
