@@ -14,6 +14,7 @@ import asyncio
 import requests
 import time
 import datetime
+import random
 
 VERBOSE = True
 # TODO: add ping reminder at noon for those who have not submitted to submit
@@ -381,32 +382,40 @@ if __name__ == "__main__":
 	
 	@slash.slash(
 		name="play",
-		description="Play a Moosic",
+		description="Play a Moosic (random if no query)",
 		options=[
 			manage_commands.create_option(
 				name="query",
 				description="Title and/or author to search for",
 				option_type=3,
-				required=True
+				required=False
 			)
 		],
 		guild_ids=[guild_id]
 	)
 	@bot.command(name="play", help="Play a Moosic")
 	async def play(ctx, *query):
+		play_random = False
+		if "".join(query) == "":
+			play_random = True
 		args = " ".join(query).lower().split(" ")
 		source = None
 		name = None
-		for f in moosics:
-			for s in args:
-				if not s in f:
+		if not play_random:
+			for f in moosics:
+				for s in args:
+					if not s in f:
+						break
+				else:
+					source = moosics[f][1]
+					name = moosics[f][0].replace(".mp3", "")
 					break
 			else:
-				source = moosics[f][1]
-				name = moosics[f][0].replace(".mp3", "")
-				break
+				return await ctx.send(f"`{' '.join(query)}` returned no results.")
 		else:
-			return await ctx.send(f"`{' '.join(query)}` returned no results.")
+			file = random.choice(list(moosics.keys()))
+			name = moosics[file][0].replace(".mp3", "")
+			source = moosics[file][1]
 		
 		vc = await connect(ctx)
 		if vc == 1:
@@ -414,7 +423,7 @@ if __name__ == "__main__":
 
 		vc = await connect(ctx)
 		vc.play(discord.FFmpegPCMAudio(executable="/usr/bin/ffmpeg", source=source))
-		await ctx.send(f"Playing **{name}**.")
+		await ctx.send(f"Playing {'random ' if play_random else ''}song: **{name}**.")
 		await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name=name))
 		while vc.is_playing():
 			await asyncio.sleep(1)
