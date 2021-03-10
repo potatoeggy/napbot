@@ -393,8 +393,11 @@ if __name__ == "__main__":
 		],
 		guild_ids=[guild_id]
 	)
-	@bot.command(name="play", help="Play a Moosic")
-	async def play(ctx, *query):
+	@bot.command(name="play", help="Play a Moosic (random if no query)")
+	async def play_bot(ctx, *query):
+		await play(ctx, *query)
+
+	async def play(ctx, *query, loop=False):
 		play_random = False
 		if "".join(query) == "":
 			play_random = True
@@ -422,13 +425,33 @@ if __name__ == "__main__":
 			return
 
 		vc = await connect(ctx)
-		vc.play(discord.FFmpegPCMAudio(executable="/usr/bin/ffmpeg", source=source))
 		await ctx.send(f"Playing {'random ' if play_random else ''}song: **{name}**.")
+		
+		vc.play(discord.FFmpegPCMAudio(executable="/usr/bin/ffmpeg", source=source))
 		await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name=name))
 		while vc.is_playing():
-			await asyncio.sleep(1)
+			await asyncio.sleep(2)
 		await vc.disconnect()
 		await bot.change_presence(activity=None)
+	
+	@slash.slash(
+		name="loop",
+		description="Play a Moosic on loop (random if no query)",
+		options=[
+			manage_commands.create_option(
+				name="query",
+				description="Title and/or author to search for",
+				option_type=3,
+				required=False
+			)
+		],
+		guild_ids=[guild_id]
+	)
+	@bot.command(name="loop", help="Play a Moosic (random if no query")
+	async def play_loop(ctx, *query):
+		while True:
+			await play(ctx, *query)
+			asyncio.sleep(0.5)
 	
 	@slash.slash(
 		name="search",
