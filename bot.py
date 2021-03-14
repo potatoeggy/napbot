@@ -113,6 +113,7 @@ def init():
 	show_board_after_log = check_config("show_board_after_log", True)
 	walk_path = check_config("walk_path", "/media/Moosic/")
 	VERBOSE = check_config("verbose", False)
+	excluded_users = check_config("excluded_users", [])
 
 	# load saved data
 	debug("Reading data...")
@@ -123,6 +124,9 @@ def init():
 		with open(data_file, "r") as file:
 			data = file.read()
 		data = json.loads(data)
+		for user in excluded_users:
+			if data.pop(str(user), None) is None:
+				debug(f"User {user} not found in data file and is excluded.")
 	except EnvironmentError:
 		# data file is probably not found and so will crash
 		debug("Could not find data file. Exiting...", urgent=True)
