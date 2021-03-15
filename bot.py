@@ -300,14 +300,14 @@ if __name__ == "__main__":
 			await ctx.send("You are not an administrator. Get lost.")
 
 	@slash.slash(
-		name="reload",
-		description="Reload the bot configuration",
+		name="crash",
+		description="Exit the bot with exit code 1",
 		options=[],
 		guild_ids=[guild_id]
 	)
-	@bot.command(name="reload", help="Reload configuration")
+	@bot.command(name="crash", help="Exit the bot with exit code 1")
 	async def reload(ctx):
-		await ctx.send("Configuration reloaded.")
+		await ctx.send("Crashing…")
 		exit(1)
 
 	@slash.slash(
