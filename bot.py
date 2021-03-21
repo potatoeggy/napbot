@@ -393,27 +393,33 @@ if __name__ == "__main__":
 				description="Title and/or author to search for",
 				option_type=3,
 				required=False
+			),
+			manage_commands.create_option(
+				name="number",
+				description="Song number from search",
+				option_type=4,
+				required=False
 			)
 		],
 		guild_ids=[guild_id]
 	)
-	@bot.command(name="play", help="Play a Moosic")
-	async def play(ctx, *query):
-		play_random = False
-		if "".join(query) == "":
-			play_random = True
+	async def play(ctx, query, number:int=1):
+		print(query, number)
+		play_random = "".join(query) == ""
 		args = " ".join(query).lower().split(" ")
 		source = None
 		name = None
 		if not play_random:
 			for f in moosics:
 				for s in args:
-					if not s in f:
+					if not s in moosics[f][1].lower():
 						break
 				else:
-					source = moosics[f][1]
-					name = moosics[f][0].replace(".mp3", "")
-					break
+					number -= 1
+					if number <= 0:
+						source = moosics[f][1]
+						name = moosics[f][0].replace(".mp3", "")
+						break
 			else:
 				return await ctx.send(f"`{' '.join(query)}` returned no results.")
 		else:
@@ -443,11 +449,16 @@ if __name__ == "__main__":
 				description="Title and/or author to search for",
 				option_type=3,
 				required=True
+			),
+			manage_commands.create_option(
+				name="page",
+				description="The page number to skip to",
+				option_type=4,
+				required=False
 			)
 		]
 	)
-	@bot.command(name="search", help="Search a Moosic")
-	async def search(ctx, *query):
+	async def search(ctx, query, page:int=1):
 		args = " ".join(query).lower().split(" ")
 		name = []
 		for f in moosics:
@@ -459,8 +470,11 @@ if __name__ == "__main__":
 		if len(name) == 0:
 			return await ctx.send(f"`{' '.join(query)}` returned no results.")
 		embed = discord.Embed(title=f"Moosic containing '{' '.join(query)}'", description="")
+		per_page = 10
+		offset = page * per_page
 		for i, n in enumerate(name):
-			if i > 5: break
+			if i < offset: continue
+			if i > per_page - 1: break
 			embed.description += f"{i+1}. {n}\n"
 		await ctx.send(embed=embed)
 	
