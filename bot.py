@@ -3,6 +3,7 @@
 import os
 import sys
 import json
+import math
 import discord
 import discord_slash
 from discord.ext import commands, tasks
@@ -404,9 +405,8 @@ if __name__ == "__main__":
 		guild_ids=[guild_id]
 	)
 	async def play(ctx, query, number:int=1):
-		print(query, number)
-		play_random = "".join(query) == ""
-		args = " ".join(query).lower().split(" ")
+		play_random = query == ""
+		args = query.lower().split(" ")
 		source = None
 		name = None
 		if not play_random:
@@ -421,7 +421,7 @@ if __name__ == "__main__":
 						name = moosics[f][0].replace(".mp3", "")
 						break
 			else:
-				return await ctx.send(f"`{' '.join(query)}` returned no results.")
+				return await ctx.send(f"`{query}` returned no results.")
 		else:
 			file = random.choice(list(moosics.keys()))
 			name = moosics[file][0].replace(".mp3", "")
@@ -459,7 +459,8 @@ if __name__ == "__main__":
 		]
 	)
 	async def search(ctx, query, page:int=1):
-		args = " ".join(query).lower().split(" ")
+		page -= 1
+		args = query.lower().split(" ")
 		name = []
 		for f in moosics:
 			for s in args:
@@ -468,14 +469,15 @@ if __name__ == "__main__":
 			else:
 				name.append(moosics[f][0].replace(".mp3", ""))
 		if len(name) == 0:
-			return await ctx.send(f"`{' '.join(query)}` returned no results.")
-		embed = discord.Embed(title=f"Moosic containing '{' '.join(query)}'", description="")
+			return await ctx.send(f"`{query}` returned no results.")
+		embed = discord.Embed(title=f"Moosic containing '{query}'", description="")
 		per_page = 10
 		offset = page * per_page
 		for i, n in enumerate(name):
 			if i < offset: continue
-			if i > per_page - 1: break
+			if i > offset + per_page - 1: break
 			embed.description += f"{i+1}. {n}\n"
+		embed.description += f"\nPage {page+1} of {math.ceil(len(name) / per_page)}"
 		await ctx.send(embed=embed)
 	
 	@slash.slash(
