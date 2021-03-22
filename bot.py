@@ -164,7 +164,7 @@ class LyricPlayer():
 			try:
 				end_stamp = s.index("]")
 				time_string = s[1:end_stamp]
-				time_string_ms = sum(x * int(t) for x, t in zip([0.001, 1, 60], reversed(re.split(":|\.", time_string))))-0.005
+				time_string_ms = sum(x * int(t) for x, t in zip([0.001, 1, 60], reversed(re.split(":|\.", time_string))))-0.010
 				if not s[end_stamp+1:].isspace():
 					print("a" + s + "b")
 					self.lyrics.append((time_string_ms - time_delta, s[end_stamp+1:]))
