@@ -279,7 +279,7 @@ if __name__ == "__main__":
 					description="Type of statistic to get",
 					option_type=3,
 					required=False,
-					choices=["weekly", "cumulative", "average", "month"]
+					choices=["weekly", "cumulative", "average", "monthly"]
 			)
 		],
 		guild_ids=[guild_id]
