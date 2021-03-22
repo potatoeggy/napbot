@@ -485,7 +485,7 @@ if __name__ == "__main__":
 		await ctx.send(f"Playing {'random ' if play_random else ''}song: **{name}**.")
 		await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name=name))
 		while vc.is_playing():
-			await asyncio.sleep(0.1		print("what")
+			await asyncio.sleep(0.1)
 		lyric_client.stop()
 		await vc.disconnect()
 		await bot.change_presence(activity=None)
