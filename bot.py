@@ -279,7 +279,7 @@ if __name__ == "__main__":
 					description="Type of statistic to get",
 					option_type=3,
 					required=False,
-					choices=["weekly"]
+					choices=["weekly", "cumulative", "average", "month"]
 			)
 		],
 		guild_ids=[guild_id]
@@ -289,30 +289,68 @@ if __name__ == "__main__":
 		await leaderboard(ctx, board_type, show_board)
 
 	async def leaderboard(ctx, board_type="weekly", show_board=True):  # TODO: implement
-		is_time_for_end_prize = False
-		is_time_for_end_prize = today().weekday() == 4 and all(
-			str(today()) in i[1] for i in data.items())
-		if not show_board and not is_time_for_end_prize:
-			return
-
-		# TODO: implement non-weekly leaderboards
-		weekly = []
-		days_remaining = 7-(today()-last_saturday()).days
-		for i, d in data.items():
-			weekly.append((cumulative_week(str(i), data), i))
-		weekly.sort(reverse=True)
-		embed = discord.Embed(
-			title=f"Leaderboard for {last_saturday()} to {today()}:")
-
-		embed.description = f"{str('🎉')} Congratulations, {', '.join(f'<@{i[1]}>' for i in filter(lambda h: weekly[0][0] == h[0], weekly))}!\n\n" if is_time_for_end_prize else f"{days_remaining} days remaining.\n\n"
-		top_user = []
-		for i, h in enumerate(weekly):
-			prefix = f"{i+1}."
-			if is_time_for_end_prize:
-				if h[0] == weekly[0][0]:
+		if board_type == "cumulative":
+			cumu = []
+			for i, d in data.items():
+				cumu.append((cumulative(str(i), data), i))
+			cumu.sort(reverse=True)
+			embed = discord.Embed(title=f"All-time leaderboard:")
+			embed.description = "\n"
+			for i, h in enumerate(cumu):
+				prefix = f"{i+1}."
+				if h[0] == cumu[0][0]:
 					prefix = str("🏅")
-			embed.description += f"{prefix} <@{int(h[1])}> — {h[0]} hours{str(' ⏲️') if not str(today()) in data[h[1]] else ''}\n"
-		await ctx.send(embed=embed)
+				embed.description += f"{prefix} <@{int(h[1])}> — {h[0]} hours\n"
+			await ctx.send(embed=embed)
+		elif board_type == "average":
+			average = []
+			for i, d in data.items():
+				average.append((cumulative_average(str(i), data), i))
+			average.sort(reverse=True)
+			embed = discord.Embed(title=f"Average all-time leaderboard:")
+			embed.description = "\n"
+			for i, h in enumerate(average):
+				prefix = f"{i+1}."
+				if h[0] == average[0][0]:
+					prefix = str("🏅")
+				embed.description += f"{prefix} <@{int(h[1])}> — {h[0]} hours\n"
+			await ctx.send(embed=embed)
+		elif board_type == "monthly":
+			monthly = []
+			for i, d in data.items():
+				monthly.append((cumulative_month(str(i), data), i))
+			monthly.sort(reverse=True)
+			embed = discord.Embed(title=f"Leaderboard for {today().year}-{today().month}-01 to {today()}:")
+			embed.description = "\n"
+			for i, h in enumerate(monthly):
+				prefix = f"{i+1}."
+				if h[0] == monthly[0][0]:
+					prefix = str("🏅")
+				embed.description += f"{prefix} <@{int(h[1])}> — {h[0]} hours\n"
+			await ctx.send(embed=embed)
+		else:
+			is_time_for_end_prize = False
+			is_time_for_end_prize = today().weekday() == 4 and all(str(today()) in i[1] for i in data.items())
+			if not show_board and not is_time_for_end_prize:
+				return
+
+			# TODO: implement non-weekly leaderboards
+			weekly = []
+			days_remaining = 7-(today()-last_saturday()).days
+			for i, d in data.items():
+				weekly.append((cumulative_week(str(i), data), i))
+			weekly.sort(reverse=True)
+			embed = discord.Embed(
+				title=f"Leaderboard for {last_saturday()} to {today()}:")
+
+			embed.description = f"{str('🎉')} Congratulations, {', '.join(f'<@{i[1]}>' for i in filter(lambda h: weekly[0][0] == h[0], weekly))}!\n\n" if is_time_for_end_prize else f"{days_remaining} days remaining.\n\n"
+			for i, h in enumerate(weekly):
+				prefix = f"{i+1}."
+				if is_time_for_end_prize:
+					if h[0] == weekly[0][0]:
+						prefix = str("🏅")
+				embed.description += f"{prefix} <@{int(h[1])}> — {h[0]} hours{str(' ⏲️') if not str(today()) in data[h[1]] else ''}\n"
+			await ctx.send(embed=embed)
 
 	@slash.slash(
 		name="tex",
