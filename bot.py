@@ -152,7 +152,7 @@ class LyricPlayer():
 		self.channel = channel
 		self.running = False
 		try:
-			with open(filename, "r", encoding=("utf8" if filename.isascii() else "utf-16-le")) as file:
+			with open(filename, "r") as file:
 				data = file.read().split("\n")
 		except IOError:
 			self.channel = 0
@@ -486,7 +486,7 @@ if __name__ == "__main__":
 		await ctx.send(f"Playing {'random ' if play_random else ''}song: **{name}**.")
 		await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name=name))
 		while vc.is_playing(): # not short enough for /play override
-			await asyncio.sleep(0.1)
+			await asyncio.sleep(1)
 		lyric_client.stop()
 		await vc.disconnect()
 		await bot.change_presence(activity=None)
