@@ -164,10 +164,11 @@ class LyricPlayer():
 			try:
 				end_stamp = s.index("]")
 				time_string = s[1:end_stamp]
-				time_string_ms = sum(x * int(t) for x, t in zip([0.001, 1, 60], reversed(re.split(":|\.", time_string))))-0.010
-				if not s[end_stamp+1:].isspace():
+				time_string_ms = sum(x * int(t) for x, t in zip([0.001, 1, 60], reversed(re.split(":|\.", time_string))))-0.020
+				lyric_line = s[end_stamp + 1:]
+				if not lyric_line.isspace() and lyric_line != "":
 					print("a" + s + "b")
-					self.lyrics.append((time_string_ms - time_delta, s[end_stamp+1:]))
+					self.lyrics.append((time_string_ms - time_delta, lyric_line))
 				time_delta = time_string_ms
 			except IndexError:
 				pass # expected if newline or badly formatted LRC
