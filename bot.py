@@ -164,11 +164,10 @@ class LyricPlayer():
 			try:
 				end_stamp = s.index("]")
 				time_string = s[1:end_stamp]
-				time_string_ms = sum(x * int(t) for x, t in zip([0.001, 1, 60], reversed(re.split(":|\.", time_string))))-0.020
+				time_string_s = sum(x * int(t) for x, t in zip([0.001, 1, 60], reversed(re.split(":|\.", time_string))))-0.020
 				lyric_line = s[end_stamp + 1:]
 				if not lyric_line.isspace() and lyric_line != "":
-					self.lyrics.append((time_string_ms - time_delta, lyric_line))
-					time_delta = time_string_ms
+					self.lyrics.append((time_string_s, lyric_line))
 			except IndexError:
 				pass # expected if newline or badly formatted LRC
 			except ValueError:
@@ -180,11 +179,17 @@ class LyricPlayer():
 		while not self.running:
 			await asyncio.sleep(0.1)
 
-		for t, s in self.lyrics:
-			await asyncio.sleep(t)
-			await self.channel.send(f"🎵 {s}")
+		start = time.time()
+		lyric_number = 0
+		while lyric_number < len(self.lyrics):
+			now = time.time()
+			current_lyric = self.lyrics[lyric_number]
+			if now >= current_lyric[0] + start:
+				await self.channel.send(f"🎵 {s}")
+				lyric_number += 1
 			if not self.running:
 				break
+			await asyncio.sleep(0.1)
 
 	def stop(self):
 		self.running = False
