@@ -185,7 +185,7 @@ class LyricPlayer():
 			now = time.time()
 			current_lyric = self.lyrics[lyric_number]
 			if now >= current_lyric[0] + start:
-				await self.channel.send(f"🎵 {s}")
+				await self.channel.send(f"🎵 {current_lyric[1]}")
 				lyric_number += 1
 			if not self.running:
 				break
