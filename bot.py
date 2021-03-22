@@ -453,11 +453,17 @@ if __name__ == "__main__":
 				description="Song number from search",
 				option_type=4,
 				required=False
+			),
+			manage_commands.create_option(
+				name="lyrics",
+				description="Show lyrics, defaults to true",
+				option_type=5,
+				required=False
 			)
 		],
 		guild_ids=[guild_id]
 	)
-	async def play(ctx, query, number:int=1):
+	async def play(ctx, query, number:int=1, lyrics:bool=True):
 		play_random = query == ""
 		args = query.lower().split(" ")
 		source = None
@@ -485,7 +491,7 @@ if __name__ == "__main__":
 			return
 
 		vc = await connect(ctx)
-		lyric_client = LyricPlayer(vc, source.replace(".mp3", ".lrc"), bot.get_channel(lyric_channel))
+		lyric_client = LyricPlayer(vc, source.replace(".mp3", ".lrc"), bot.get_channel(lyric_channel) if lyrics else 0)
 		vc.play(discord.FFmpegPCMAudio(executable="/usr/bin/ffmpeg", source=source))
 		loop = asyncio.get_event_loop()
 		loop.create_task(lyric_client.start())
