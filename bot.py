@@ -168,7 +168,7 @@ class LyricPlayer():
 				lyric_line = s[end_stamp + 1:]
 				if not lyric_line.isspace() and lyric_line != "":
 					self.lyrics.append((time_string_ms - time_delta, lyric_line))
-				time_delta = time_string_ms
+					time_delta = time_string_ms
 			except IndexError:
 				pass # expected if newline or badly formatted LRC
 			except ValueError:
