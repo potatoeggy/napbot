@@ -1,9 +1,11 @@
 #!/usr/bin/python
 
 import os
+import re
 import sys
 import json
 import math
+import threading
 import discord
 import discord_slash
 from discord.ext import commands, tasks
@@ -115,6 +117,7 @@ def init():
 	walk_path = check_config("walk_path", "/media/Moosic/")
 	VERBOSE = check_config("verbose", False)
 	excluded_users = check_config("excluded_users", [])
+	lyric_channel = check_config("lyric_channel", 0)
 
 	# load saved data
 	debug("Reading data...")
@@ -139,11 +142,54 @@ def init():
 				if name.endswith(".mp3"):
 					moosics[name.lower()] = (name, os.path.join(root, name))
 
-	return discord_guild, discord_token, data, data_file, admin_user_id, show_board_after_log, moosics
+	return discord_guild, discord_token, data, data_file, admin_user_id, show_board_after_log, moosics, lyric_channel
+
+class LyricPlayer():
+	__slots__ = ["vc", "filename", "channel", "lyrics", "running"]
+	def __init__(self, vc, filename, channel):
+		self.vc = vc
+		self.filename = filename
+		self.channel = channel
+		self.running = False
+		try:
+			with open(filename, "r") as file:
+				data = file.read().split("\n")
+		except IOError:
+			self.channel = 0
+		
+		self.lyrics = []
+		time_delta = 0
+		for s in data:
+			try:
+				end_stamp = s.index("]")
+				time_string = s[1:end_stamp]
+				time_string_ms = sum(x * int(t) for x, t in zip([0.001, 1, 60], reversed(re.split(":|\.", time_string))))
+				if not s.isspace():
+					self.lyrics.append((time_string_ms - time_delta, s[end_stamp+1:]))
+				time_delta = time_string_ms
+			except IndexError:
+				pass # expected if newline or badly formatted LRC
+			except ValueError:
+				pass # line does not have stamp
+	
+	async def start(self):
+		self.running = True
+		if self.channel == 0: return
+		while not self.running:
+			await asyncio.sleep(0.1)
+
+		for t, s in self.lyrics:
+			await asyncio.sleep(t)
+			await self.channel.send(f"🎵 {s}")
+			if not self.running:
+				break
+
+	def stop(self):
+		self.running = False
 
 
 if __name__ == "__main__":
-	guild_id, client_token, data, data_file, admin_user_id, show_board_after_log, moosics = init()
+	guild_id, client_token, data, data_file, admin_user_id, show_board_after_log, moosics, lyric_channel = init()
 	command_prefix = "."
 	bot = commands.Bot(command_prefix=command_prefix,
 					   intents=discord.Intents.all())
@@ -432,11 +478,15 @@ if __name__ == "__main__":
 			return
 
 		vc = await connect(ctx)
+		lyric_client = LyricPlayer(vc, source.replace(".mp3", ".lrc"), bot.get_channel(lyric_channel))
 		vc.play(discord.FFmpegPCMAudio(executable="/usr/bin/ffmpeg", source=source))
+		loop = asyncio.get_event_loop()
+		loop.create_task(lyric_client.start())
 		await ctx.send(f"Playing {'random ' if play_random else ''}song: **{name}**.")
 		await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name=name))
 		while vc.is_playing():
-			await asyncio.sleep(1)
+			await asyncio.sleep(0.1		print("what")
+		lyric_client.stop()
 		await vc.disconnect()
 		await bot.change_presence(activity=None)
 	
