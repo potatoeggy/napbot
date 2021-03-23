@@ -501,7 +501,7 @@ if __name__ == "__main__":
 		],
 		guild_ids=[guild_id]
 	)
-	async def play(ctx, query, number:int=1, lyrics:bool=True):
+	async def play(ctx, query="", number:int=1, lyrics:bool=True):
 		play_random = query == ""
 		args = query.lower().split(" ")
 		source = None
