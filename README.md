@@ -3,10 +3,19 @@ A Discord bot that tracks user reported sleep hours
 
 It also carries some miscellaneous other functions such as LaTeX rendering and custom slash command registration.
 
+The bot uses Discord's slash command
+
 ### Features
 
- - Local music support with synchronised lyrics
- - Sleep tracking with leaderboards
+ - Local music playing support with synchronised lyrics
+ - Sleep tracking with various leaderboards
+ - Custom slash command registration during runtime
+ - Automatic LaTeX rendering with `$$...$$`
+
+### Dependencies
+
+ - [discord-py-slash-command](https://pypi.org/project/discord-py-slash-command/)
+ - [discord.py](https://pypi.org/project/discord.py/)
 
 ### Configuration
 
