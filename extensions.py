@@ -15,7 +15,7 @@ class archive_status(commands.Cog):
                 for b in before.activities:
                     if b.type == discord.ActivityType.custom and b.name == a.name: # if custom was not the one changed
                         return
-                emoji = "" if a.emoji is None else str(emoji)
+                emoji = "" if a.emoji is None else str(a.emoji)
                 embed = discord.Embed(
                     description=f"{emoji} {a.name}"
                 )
