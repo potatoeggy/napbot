@@ -8,6 +8,7 @@ import math
 import threading
 import discord
 import discord_slash
+import extensions
 from discord.ext import commands, tasks
 from discord_slash import SlashCommand, cog_ext
 from discord_slash.utils import manage_commands
@@ -118,6 +119,8 @@ def init():
 	VERBOSE = check_config("verbose", False)
 	excluded_users = check_config("excluded_users", [])
 	lyric_channel = check_config("lyric_channel", 0)
+	extension_list = check_config("extensions", [])
+	status_channel = check_config("status_channel", 0)
 
 	# load saved data
 	debug("Reading data...")
@@ -142,7 +145,7 @@ def init():
 				if name.endswith(".mp3"):
 					moosics[name.lower()] = (name, os.path.join(root, name))
 
-	return discord_guild, discord_token, data, data_file, admin_user_id, show_board_after_log, moosics, lyric_channel
+	return discord_guild, discord_token, data, data_file, admin_user_id, show_board_after_log, moosics, lyric_channel, extension_list, status_channel
 
 class LyricPlayer():
 	__slots__ = ["vc", "filename", "channel", "lyrics", "running"]
@@ -196,11 +199,22 @@ class LyricPlayer():
 
 
 if __name__ == "__main__":
-	guild_id, client_token, data, data_file, admin_user_id, show_board_after_log, moosics, lyric_channel = init()
+	guild_id, client_token, data, data_file, admin_user_id, show_board_after_log, moosics, lyric_channel, extension_list, status_channel = init()
+
 	command_prefix = "."
 	bot = commands.Bot(command_prefix=command_prefix,
 					   intents=discord.Intents.all())
 	slash = SlashCommand(bot, sync_commands=True)
+	# check extensions here because am too lazy and i've given up to the spaghet
+	extension_dict = {"archive_status": (extensions.archive_status, bot, status_channel)}
+	for s in extension_list:
+		if s in extension_dict:
+			extension_function = extension_dict[s][0]
+			extension_parameters = extension_dict[s][1:]
+			bot.add_cog(extension_function(*extension_parameters))
+			debug(f"Installed extension {s}.")
+		else:
+			debug(f"ERROR: \"{s}\" is not an installed extension.", urgent=True)
 	command_register = []
 
 	@bot.event
