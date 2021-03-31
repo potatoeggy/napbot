@@ -19,6 +19,6 @@ class archive_status(commands.Cog):
                 embed = discord.Embed(
                     description=f"{emoji} {a.name}"
                 )
-                embed.set_author(name=after.name, icon_url=after.avatar_url)
+                embed.set_author(name=str(after), icon_url=after.avatar_url)
                 await self.bot.get_channel(self.embed_channel).send(embed=embed)
             
