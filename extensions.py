@@ -14,9 +14,8 @@ class archive_status(commands.Cog):
         b = next(filter(lambda i: i.type == discord.ActivityType.custom, before.activities), None)
         if a.name == "" or str(b) == str(a): # if it was cleared or if it hasn't changed
             return
-        emoji = "" if a.emoji is None else str(a.emoji)
         embed = discord.Embed(
-            description=f"{emoji} {str(a)}"
+            description=f"{str(a)}"
         )
         embed.set_author(name=str(after), icon_url=after.avatar_url)
         await self.bot.get_channel(self.embed_channel).send(embed=embed)
