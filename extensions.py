@@ -8,17 +8,16 @@ class archive_status(commands.Cog):
     
     @commands.Cog.listener()
     async def on_member_update(self, before, after):
-        for a in after.activities:
-            if a.type == discord.ActivityType.custom:
-                if a.name == "": # if it was cleared
-                    return
-                for b in before.activities:
-                    if b.type == discord.ActivityType.custom and b.name == a.name: # if custom was not the one changed
-                        return
-                emoji = "" if a.emoji is None else str(a.emoji)
-                embed = discord.Embed(
-                    description=f"{emoji} {a.name}"
-                )
-                embed.set_author(name=str(after), icon_url=after.avatar_url)
-                await self.bot.get_channel(self.embed_channel).send(embed=embed)
+        if before.status == discord.Status.offline: # if status was not custom changed
+            return
+        a = next(filter(lambda i: i.type == discord.ActivityType.custom, after.activities), None)
+        b = next(filter(lambda i: i.type == discord.ActivityType.custom, before.activities), None)
+        if a.name == "" or str(b) == str(a): # if it was cleared or if it hasn't changed
+            return
+        emoji = "" if a.emoji is None else str(a.emoji)
+        embed = discord.Embed(
+            description=f"{emoji} {str(a)}"
+        )
+        embed.set_author(name=str(after), icon_url=after.avatar_url)
+        await self.bot.get_channel(self.embed_channel).send(embed=embed)
             
