@@ -12,7 +12,7 @@ class archive_status(commands.Cog):
             return
         a = str(next(filter(lambda i: i.type == discord.ActivityType.custom, after.activities), None))
         b = str(next(filter(lambda i: i.type == discord.ActivityType.custom, before.activities), None))
-        if a == "" or b == a: # if it was cleared or if it hasn't changed
+        if a == "None" or b == a: # if it was cleared or if it hasn't changed
             return
         print(b,a)
         embed = discord.Embed(description=a)
