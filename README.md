@@ -3,7 +3,7 @@ A Discord bot that tracks user reported sleep hours
 
 It also carries some miscellaneous other functions such as LaTeX rendering and custom slash command registration.
 
-The bot uses Discord's slash command
+The bot uses Discord's slash command integration for most of its features and the traditional bot prefix of `.` is deprecated.
 
 ### Features
 
