@@ -609,9 +609,9 @@ if __name__ == "__main__":
 		await vc.disconnect()
 		await bot.change_presence(activity=None)
 
-	@bot.event
-	async def on_command(message):
-		await message.reply("WARNING: Traditional prefixed commands are deprecated and will be removed in a future update. Please switch to slash commands instead.")
+#	@bot.event
+#	async def on_command(message):
+#		await message.reply("WARNING: Traditional prefixed commands are deprecated and will be removed in a future update. Please switch to slash commands instead.")
 
 	@bot.event
 	async def on_message(message):
