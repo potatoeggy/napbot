@@ -148,12 +148,13 @@ def init():
 	return discord_guild, discord_token, data, data_file, admin_user_id, show_board_after_log, moosics, lyric_channel, extension_list, status_channel
 
 class LyricPlayer():
-	__slots__ = ["vc", "filename", "channel", "lyrics", "running"]
-	def __init__(self, vc, filename, channel):
+	__slots__ = ["vc", "filename", "channel", "lyrics", "running", "title"]
+	def __init__(self, vc, filename, channel, title):
 		self.vc = vc
 		self.filename = filename
 		self.channel = channel
 		self.running = False
+		self.title = title
 		try:
 			with open(filename, "r") as file:
 				data = file.read().split("\n")
@@ -181,18 +182,34 @@ class LyricPlayer():
 		if self.channel == 0: return
 		while not self.running:
 			await asyncio.sleep(0.1)
+		
+		embed = discord.Embed(title=self.title)
+		embed.description = "\n".join(self.lyrics)
+		msg = await self.channel.send(embed=embed)
 
 		start = time.time()
 		lyric_number = 0
+
 		while lyric_number < len(self.lyrics):
 			now = time.time()
 			current_lyric = self.lyrics[lyric_number]
 			if now >= current_lyric[0] + start:
+				
 				await self.channel.send(f"🎵 {current_lyric[1]}")
 				lyric_number += 1
 			if not self.running:
 				break
 			await asyncio.sleep(0.1)
+		
+		for i, t, _ in enumerate(self.lyrics):
+			now = time.time()
+			embed.description = self.lyrics[:i] + [f"**{self.lyrics[i]}**"] + [self.lyrics[i+1:]] if i < len(self.lyrics)-1 else []
+			while not now >= t + start:
+				if not self.running:
+					break
+				await asyncio.sleep(0.1)
+			await msg.edit(embed=embed)
+			
 
 	def stop(self):
 		self.running = False
@@ -543,7 +560,7 @@ if __name__ == "__main__":
 			return
 
 		vc = await connect(ctx)
-		lyric_client = LyricPlayer(vc, source.replace(".mp3", ".lrc"), bot.get_channel(lyric_channel) if lyrics else 0)
+		lyric_client = LyricPlayer(vc, source.replace(".mp3", ".lrc"), ctx.channel if lyrics else 0, name)
 		vc.play(discord.FFmpegPCMAudio(executable="/usr/bin/ffmpeg", source=source))
 		loop = asyncio.get_event_loop()
 		loop.create_task(lyric_client.start())
