@@ -7,6 +7,7 @@ from discord_slash import SlashCommand
 
 log = iohandler.Logger()
 config = iohandler.Config(log)
+log.set_log_level(config.log_level)
 
 if __name__ == "__main__":
     bot = commands.Bot(command_prefix=",")
