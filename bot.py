@@ -24,6 +24,8 @@ if __name__ == "__main__":
         except commands.ExtensionFailed:
             log.warn(f"Extension {m} failed somewhere in its setup process, skipping.")
 
-    bot.cogs
+    @bot.event
+    async def on_ready():
+        log.info(f"Logged in to Discord as {bot.user}.")
 
     bot.run(config.bot_token)
