@@ -1,4 +1,5 @@
 import configparser
+import os
 
 
 class Logger:
@@ -49,4 +50,4 @@ class Config:
             map(int, general.get("DebugGuild", fallback="").split(","))
         )
         self.bot_token = general.get("BotToken")
-        self.cogs_enabled = general.get("CogsEnabled", fallback="").split(",")
+        self.modules = general.get("Modules", fallback="").split(",")
