@@ -148,7 +148,6 @@ def init():
 	return discord_guild, discord_token, data, data_file, admin_user_id, show_board_after_log, moosics, lyric_channel, extension_list, status_channel
 
 class LyricPlayer():
-	__slots__ = ["vc", "filename", "channel", "lyrics", "running", "title"]
 	def __init__(self, vc, filename, channel, title):
 		self.vc = vc
 		self.filename = filename
