@@ -16,6 +16,7 @@ if __name__ == "__main__":
     slash = SlashCommand(bot, sync_commands=True)
     # import cogs
     for m in config.modules:
+        log.debug(f"Attempting to load extension {m}.")
         try:
             bot.load_extension(f"extensions.{m}")
         except commands.ExtensionNotFound:

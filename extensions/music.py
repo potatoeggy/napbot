@@ -3,13 +3,16 @@ from discord_slash import SlashCommand
 import eyed3
 import os
 import re
+import contextlib
 
-MANUAL_TIME_OFFSET = 0
+MANUAL_LYRIC_OFFSET = 0
 
 
 class Song:
     def __init__(self, audio_path: str):
         self.base_name = os.path.splitext(os.path.basename(audio_path))[0]
+        self.path = audio_path
+        self.path_lower = audio_path.lower()
         self.artist = None
         self.title = None
         self.album = None
@@ -18,8 +21,10 @@ class Song:
         self.lyrics = []
         self.lyric_timestamps = []
 
-        mp3 = eyed3.load(audio_path)
-        if mp3 is not None:
+        with open(os.devnull, "w") as null:
+            with contextlib.redirect_stderr(null):
+                mp3 = eyed3.load(audio_path)
+        if mp3 is not None and mp3.tag is not None:
             self.artist = mp3.tag.artist
             self.title = mp3.tag.title
             self.album = mp3.tag.album
@@ -57,6 +62,9 @@ class Music(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.log = bot.log
+
+        # read configuration
+        self.log.debug("Reading music configuration")
         if "music" in bot.config.config:
             conf = bot.config.config["music"]
             self.root_path = conf.get("MusicPath", fallback="/media/Moosic")
@@ -67,8 +75,22 @@ class Music(commands.Cog):
             self.root_path = "/media/Moosic"
             self.show_song_status = False
 
+        # process all songs
+        self.get_files()
+
     def get_files(self):
-        pass
+        self.songs = []
+        self.log.info(f"Searching for songs from {self.root_path}.")
+        for root, dirs, files in os.walk(self.root_path):
+            for name in files:
+                if name.endswith(".mp3"):
+                    try:
+                        self.songs.append(Song(os.path.join(root, name)))
+                    except IOError:
+                        # expected if file not found
+                        pass
+
+        self.log.info(f"Found {len(self.songs)} songs.")
 
 
 def setup(bot: commands.Bot):
