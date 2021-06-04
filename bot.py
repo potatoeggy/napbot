@@ -23,6 +23,7 @@ if __name__ == "__main__":
             log.warn(f"Extension {m} is missing a global setup function, skipping.")
         except commands.ExtensionFailed:
             log.warn(f"Extension {m} failed somewhere in its setup process, skipping.")
+    log.info(f"Loaded {len(bot.cogs)} module(s).")
 
     @bot.event
     async def on_ready():

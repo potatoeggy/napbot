@@ -6,8 +6,8 @@ class Music(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.log = bot.log
-        if "music" in bot.config:
-            conf = bot.config["music"]
+        if "music" in bot.config.config:
+            conf = bot.config.config["music"]
             self.root_path = conf.get("MusicPath", fallback="/media/Moosic")
             self.show_song_status = conf.getboolean(
                 "CurrentSongAsStatus", fallback=False
