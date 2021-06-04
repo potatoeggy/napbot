@@ -192,11 +192,12 @@ class LyricPlayer():
 		
 		for i, t in enumerate(self.lyric_times):
 			now = time.time()
-			embed.description = self.lyrics[:i] + [f"**{self.lyrics[i]}**"] + [self.lyrics[i+1:]] if i < len(self.lyrics)-1 else []
-			while not now >= t + start:
+			embed.description = "\n".join(self.lyrics[:i] + [f"**{self.lyrics[i]}**"] + self.lyrics[i+1:] if i < len(self.lyrics)-1 else [])
+			while now < t + start:
 				if not self.running:
-					break
+					return
 				await asyncio.sleep(0.1)
+				now = time.time()
 			await msg.edit(embed=embed)
 			
 
