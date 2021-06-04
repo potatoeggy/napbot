@@ -190,9 +190,10 @@ class LyricPlayer():
 
 		start = time.time()
 		
+		MAX_LINES = 10
 		for i, t in enumerate(self.lyric_times):
 			now = time.time()
-			embed.description = "\n".join(self.lyrics[:i] + [f"**{self.lyrics[i]}**"] + self.lyrics[i+1:] if i < len(self.lyrics)-1 else [])
+			embed.description = "\n".join(self.lyrics[max(0, i-MAX_LINES):i] + [f"**{self.lyrics[i]}**"] + self.lyrics[i+1:min(i+MAX_LINES+1, len(self.lyrics))] if i < len(self.lyrics)-1 else [])
 			while now < t + start:
 				if not self.running:
 					return
