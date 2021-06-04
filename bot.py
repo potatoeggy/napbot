@@ -184,20 +184,20 @@ class LyricPlayer():
 		while not self.running:
 			await asyncio.sleep(0.1)
 		
+		MAX_LINES = 10
 		embed = discord.Embed(title=self.title)
-		embed.description = "\n".join(self.lyrics)
+		embed.description = "\n".join(self.lyrics[:min(MAX_LINES*2+1, len(self.lyrics))])
 		msg = await self.channel.send(embed=embed)
 
 		start = time.time()
 		
-		MAX_LINES = 10
 		for i, t in enumerate(self.lyric_times):
 			now = time.time()
 			embed.description = "\n".join(self.lyrics[max(0, i-MAX_LINES):i] + [f"**{self.lyrics[i]}**"] + self.lyrics[i+1:min(i+MAX_LINES+1, len(self.lyrics))] if i < len(self.lyrics)-1 else [])
 			while now < t + start:
 				if not self.running:
 					return
-				await asyncio.sleep(0.1)
+				await asyncio.sleep(0.2)
 				now = time.time()
 			await msg.edit(embed=embed)
 			
