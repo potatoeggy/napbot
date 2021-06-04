@@ -47,7 +47,7 @@ class Config:
         self.log_level = general.getint("LogLevel", fallback=1)
         self.admin_ids = list(map(int, general.get("AdminIds", fallback="").split(",")))
         self.debug_guilds = list(
-            map(int, general.get("DebugGuild", fallback="").split(","))
+            map(int, general.get("DebugGuilds", fallback="").split(","))
         )
         self.bot_token = general.get("BotToken")
         self.modules = general.get("Modules", fallback="").split(",")
