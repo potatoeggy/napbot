@@ -4,6 +4,7 @@ from discord.ext import commands
 import discord_slash
 import discord
 from discord_slash import SlashCommand
+import traceback
 
 log = iohandler.Logger()
 config = iohandler.Config(log)
@@ -25,6 +26,7 @@ if __name__ == "__main__":
             log.warn(f"Extension {m} is missing a global setup function, skipping.")
         except commands.ExtensionFailed:
             log.warn(f"Extension {m} failed somewhere in its setup process, skipping.")
+            log.error(traceback.format_exc())
     log.info(f"Loaded {len(bot.cogs)} module(s).")
 
     @bot.event

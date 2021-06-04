@@ -4,6 +4,7 @@ import eyed3
 import os
 import re
 import contextlib
+import asyncio
 
 MANUAL_LYRIC_OFFSET = 0
 
