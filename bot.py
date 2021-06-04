@@ -190,7 +190,7 @@ class LyricPlayer():
 
 		start = time.time()
 		
-		for i, t, _ in enumerate(zip(self.lyric_times, self.lyrics)):
+		for i, t in enumerate(self.lyric_times):
 			now = time.time()
 			embed.description = self.lyrics[:i] + [f"**{self.lyrics[i]}**"] + [self.lyrics[i+1:]] if i < len(self.lyrics)-1 else []
 			while not now >= t + start:
