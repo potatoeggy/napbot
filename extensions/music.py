@@ -165,20 +165,33 @@ class Music(commands.Cog):
                 sources.append(song)
         return sources
 
-    async def play(self, ctx, query="", number: int = 1, show_lyrics: bool = True):
+    async def play(
+        self,
+        ctx,
+        query="",
+        number: int = 1,
+        random: bool = False,
+        show_lyrics: bool = True,
+    ):
         # treat numbers <= 0 as play all
         play_all = number <= 0
-        if not query:
+        if not query and not random:
             # if there is a query
             try:
-                source = self.find_songs(query)[number - 1]
+                sources = self.find_songs(query)
+                if not play_all:
+                    sources = [sources[number - 1]]
             except IndexError:
                 return await ctx.send(
                     f"No songs matching '{query}' were found at the specified index."
                 )
         else:
             # if query is empty play a random song
-            source = random.choice(self.songs)
+            if play_all:
+                sources = self.songs.copy()
+                random.shuffle(sources)
+            else:
+                sources = [random.choice(self.songs)]
 
         try:
             self.get_voice_state(ctx)
@@ -187,6 +200,7 @@ class Music(commands.Cog):
             return
 
         # TODO: push to queue and report to user
+        # Added 2 songs if more than 1, if 1 output song name
 
     async def play_now(self, ctx, query="", number: int = 1, show_lyrics: bool = True):
         pass
