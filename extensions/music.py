@@ -8,6 +8,7 @@ import asyncio
 import random
 import itertools
 import discord
+import math
 
 MANUAL_LYRIC_OFFSET = 0
 ITEMS_PER_PAGE = 10
@@ -205,7 +206,9 @@ class Music(commands.Cog):
         embed = discord.Embed(title=f"Moosic containing '{query}'", description="")
         for i, n in enumerate(sources[offset : offset + ITEMS_PER_PAGE + 1]):
             embed.description += f"{i+1}. {n}\n"
-        embed.description += f"\nPage {page+1} of {math.ceil(len(name) / per_page)}"
+        embed.description += (
+            f"\nPage {page+1} of {math.ceil(len(sources) / ITEMS_PER_PAGE)}"
+        )
         await ctx.send(embed=embed)
 
     async def stop(self, ctx):
