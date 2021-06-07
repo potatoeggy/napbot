@@ -173,8 +173,12 @@ class VoiceState:
     def __del__(self):
         self.player.cancel()
 
-    def skip(self, num: int = 1):
-        pass
+    async def skip(self, num: int = 1):
+        num -= 1
+        for i in range(num):
+            await self.queue.get()
+        if self.current:
+            self.vc.stop()
 
     async def add(self, song: Song, right_away: bool = False, lyrics: bool = True):
         if not right_away:
@@ -216,13 +220,14 @@ class VoiceState:
             while self.vc.is_playing():
                 await asyncio.sleep(1)
             await self.bot.change_presence(activity=None)
-            print("hello?")
+            self.current = None
 
     async def stop(self):
         self.queue.clear()
+        await self.bot.change_presence(activity=None)
         if self.vc:
             await self.vc.disconnect()
-            self.voice = None
+            self.vc = None
 
 
 class Music(commands.Cog):
@@ -346,6 +351,23 @@ class Music(commands.Cog):
         pass
 
     @cog_ext.cog_slash(
+        name="skip",
+        description="Skip a number of tracks (default 1)",
+        options=[
+            manage_commands.create_option(
+                name="number",
+                description="The number of tracks to skip",
+                option_type=4,
+                required=False,
+            )
+        ],
+        guild_ids=[DEBUG_GUILD],
+    )
+    async def skip(self, ctx, number: int = 1):
+        await self.voice_state.skip(number)
+        await ctx.send("Skipped track.")
+
+    @cog_ext.cog_slash(
         name="search",
         description="Searches local files for music",
         options=[
@@ -381,8 +403,16 @@ class Music(commands.Cog):
         )
         await ctx.send(embed=embed)
 
+    @cog_ext.cog_slash(
+        name="stop",
+        description="Stop playback and disconnect",
+        options=[],
+        guild_ids=[DEBUG_GUILD],
+    )
     async def stop(self, ctx):
-        pass
+        await self.voice_state.stop()
+        del self.voice_state
+        await ctx.send("Goodbye!")
 
     @cog_ext.cog_slash(
         name="clear", description="Clear the queue", options=[], guild_ids=[DEBUG_GUILD]
