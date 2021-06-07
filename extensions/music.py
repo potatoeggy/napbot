@@ -175,7 +175,7 @@ class VoiceState:
 
     async def skip(self, num: int = 1):
         num -= 1
-        for i in range(num):
+        for _ in range(num):
             await self.queue.get()
         if self.current:
             self.vc.stop()
