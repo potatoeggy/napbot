@@ -106,12 +106,40 @@ class SongQueue(asyncio.Queue):
         # TODO: no idea why but the queue is just broken now
 
 
+class FixLyricButton(discord.ui.View):
+    def __init__(self, bot: commands.Bot, title):
+        super().__init__()
+        self.users_to_ping = list(
+            map(int, bot.config.config["napbot"].get("AdminIds", "").split(","))
+        )
+        self.title = title
+        self.bot = bot
+
+    @discord.ui.button(label="Request lyric update", style=discord.ButtonStyle.green)
+    async def ping_admin(
+        self, button: discord.ui.Button, interaction: discord.Interaction
+    ):
+        for admin in self.users_to_ping:
+            try:
+                channel = await (await self.bot.fetch_user(admin)).create_dm()
+                await channel.send(
+                    f"**{str(interaction.user)}** would like you to update the lyrics for **{self.title}**."
+                )
+            except TypeError:
+                self.bot.log.error(f"{admin} is not a valid user id.")
+        button.label = "Lyric update requested"
+        button.style = discord.ButtonStyle.grey
+        button.disabled = True
+        await interaction.response.edit_message(view=self)
+
+
 class LyricPlayer:
-    def __init__(self, vc, ctx, source, voice_state, show_lyrics):
+    def __init__(self, vc, ctx, source, voice_state, bot, show_lyrics):
         self.vc = vc
         self.ctx = ctx
         self.source = source
         self.voice_state = voice_state
+        self.bot = bot
         self.show_lyrics = show_lyrics
 
     async def start(self):
@@ -138,9 +166,15 @@ class LyricPlayer:
             with io.BytesIO(self.source.art) as imagedata:
                 file = discord.File(fp=imagedata, filename="cover.jpg")
                 embed.set_thumbnail(url="attachment://cover.jpg")
-                msg = await self.ctx.channel.send(embed=embed, file=file)
+                msg = await self.ctx.channel.send(
+                    embed=embed,
+                    file=file,
+                    view=FixLyricButton(self.bot, self.source.get_name()),
+                )
         else:
-            msg = await self.ctx.channel.send(embed=embed)
+            msg = await self.ctx.channel.send(
+                embed=embed, view=FixLyricButton(self.bot, self.source.get_name())
+            )
 
         if self.show_lyrics:
             start = time.time()
@@ -226,7 +260,7 @@ class VoiceState:
                 self.bot.loop.create_task(self.stop())
                 return
             lyric_client = LyricPlayer(
-                self.vc, self.ctx, self.current[0], self, self.current[1]
+                self.vc, self.ctx, self.current[0], self, self.bot, self.current[1]
             )
             self.loop.create_task(lyric_client.start())
             self.vc.play(discord.FFmpegPCMAudio(source=self.current[0].path))
