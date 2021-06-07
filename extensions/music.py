@@ -127,7 +127,7 @@ class FixLyricButton(discord.ui.View):
                 )
             except TypeError:
                 self.bot.log.error(f"{admin} is not a valid user id.")
-        button.label = "Lyric update requested"
+        button.label = "Lyric fix requested"
         button.style = discord.ButtonStyle.grey
         button.disabled = True
         await interaction.response.edit_message(view=self)
