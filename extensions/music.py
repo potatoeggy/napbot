@@ -1,5 +1,5 @@
 from discord.ext import commands
-from discord_slash import SlashCommand
+from discord_slash import cog_ext, manage_commands
 import eyed3
 import os
 import re
@@ -12,6 +12,7 @@ import math
 
 MANUAL_LYRIC_OFFSET = 0
 ITEMS_PER_PAGE = 10
+DEBUG_GUILD = 812784271294726156
 
 
 class Song:
@@ -42,6 +43,9 @@ class Song:
                 data = file.read().split("\n")
         except IOError:
             # file not found
+            data = []
+        except UnicodeDecodeError:
+            # invalid LRC
             data = []
 
         for s in data:
@@ -92,17 +96,8 @@ class SongQueue(asyncio.Queue):
 class VoiceState:
     # TODO: implement the event loop
     def __init__(self, ctx: commands.Context):
-        channel = ctx.author.voice.channel
-        self.vc = ctx.guild.voice_client
-        if self.vc:
-            if self.vc.channel.id == channel.id:
-                self.vc.stop()
-                return
-            await self.vc.move_to(channel)
-        else:
-            await channel.connect()
-
         # TODO: implement a queue here
+        pass
 
     def skip(self, num: int = 1):
         pass
@@ -112,6 +107,17 @@ class VoiceState:
 
     def remove(self, num: int):
         pass
+
+    async def connect(self, ctx):
+        channel = ctx.author.voice.channel
+        self.vc = ctx.guild.voice_client
+        if self.vc:
+            if self.vc.channel.id == channel.id:
+                self.vc.stop()
+                return
+            await self.vc.move_to(channel)
+        else:
+            await channel.connect()
 
 
 class Music(commands.Cog):
@@ -153,6 +159,7 @@ class Music(commands.Cog):
         if self.voice_state:
             return self.voice_state
         self.voice_state = VoiceState(ctx)
+        await self.voice_state.connect(ctx)
 
     async def find_songs(self, query) -> list:
         args = query.lower().split()
@@ -205,21 +212,38 @@ class Music(commands.Cog):
     async def play_now(self, ctx, query="", number: int = 1, show_lyrics: bool = True):
         pass
 
-    async def play_after(
-        self, ctx, query="", number: int = 1, show_lyrics: bool = True
-    ):
+    async def play_next(self, ctx, query="", number: int = 1, show_lyrics: bool = True):
         pass
 
+    @cog_ext.cog_slash(
+        name="search",
+        description="Searches local files for music",
+        options=[
+            manage_commands.create_option(
+                name="query",
+                description="Query to search for in tags",
+                option_type=3,
+                required=True,
+            ),
+            manage_commands.create_option(
+                name="page",
+                description="Page number to show",
+                option_type=4,
+                required=False,
+            ),
+        ],
+        guild_ids=[DEBUG_GUILD],
+    )
     async def search(self, ctx, query, page: int = 1):
         page -= 1
-        sources = self.find_songs(query)
+        sources = await self.find_songs(query)
         offset = page * ITEMS_PER_PAGE
-        if len(sources) < offset + ITEMS_PER_PAGE:
+        if len(sources) < offset:
             return await ctx.send(f"Page not found for query '{query}'.")
 
         embed = discord.Embed(title=f"Moosic containing '{query}'", description="")
-        for i, n in enumerate(sources[offset : offset + ITEMS_PER_PAGE + 1]):
-            embed.description += f"{i+1}. {n}\n"
+        for i, n in enumerate(sources[offset : offset + ITEMS_PER_PAGE]):
+            embed.description += f"{offset+i+1}. {n.get_name()}\n"
         embed.description += (
             f"\nPage {page+1} of {math.ceil(len(sources) / ITEMS_PER_PAGE)}"
         )
