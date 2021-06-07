@@ -115,7 +115,7 @@ class FixLyricButton(discord.ui.View):
         self.title = title
         self.bot = bot
 
-    @discord.ui.button(label="Request lyric update", style=discord.ButtonStyle.green)
+    @discord.ui.button(label="Request lyric fix", style=discord.ButtonStyle.green)
     async def ping_admin(
         self, button: discord.ui.Button, interaction: discord.Interaction
     ):
