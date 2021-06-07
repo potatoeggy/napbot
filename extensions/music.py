@@ -9,9 +9,12 @@ import random
 import itertools
 import discord
 import math
+from async_timeout import timeout
+import time
 
 MANUAL_LYRIC_OFFSET = 0
 ITEMS_PER_PAGE = 10
+MAX_LINES = 5
 DEBUG_GUILD = 812784271294726156
 
 
@@ -91,22 +94,94 @@ class SongQueue(asyncio.Queue):
 
     def remove(self, index: int):
         del self._queue[index]
+        # TODO: no idea why but the queue is just broken now
+
+
+class LyricPlayer:
+    def __init__(self, vc, ctx, source, voice_state, show_lyrics):
+        self.vc = vc
+        self.ctx = ctx
+        self.source = source
+        self.voice_state = voice_state
+        self.show_lyrics = show_lyrics
+
+    async def start(self):
+        embed = discord.Embed(title=self.source.get_name(), description="")
+        if self.source.title:
+            embed.title = self.source.title
+        if self.source.artist:
+            embed.description += f"{self.source.artist}\n"
+        if self.source.album:
+            embed.description += f"{self.source.album}\n"
+        if self.source.lyrics and self.show_lyrics:
+            embed.add_field(
+                name="Lyrics",
+                value="\n".join(
+                    self.source.lyrics[
+                        : min(MAX_LINES * 2 + 1, len(self.source.lyrics))
+                    ]
+                ),
+            )
+        msg = await self.ctx.channel.send(embed=embed)
+
+        if self.show_lyrics:
+            start = time.time()
+            for i, t in enumerate(self.source.lyric_timestamps):
+                now = time.time()
+                lines_before = max(
+                    0, min(i - MAX_LINES, len(self.source.lyrics) - MAX_LINES * 2)
+                )
+                lines_after = min(
+                    len(self.source.lyrics),
+                    max(i + MAX_LINES, MAX_LINES * 2 + 1 - lines_before),
+                )
+                embed.set_field_at(
+                    0,
+                    name="Lyrics",
+                    value="\n".join(
+                        self.source.lyrics[lines_before:i]
+                        + [f"**{self.source.lyrics[i]}**"]
+                        + (
+                            self.source.lyrics[i + 1 : lines_after]
+                            if i + 1 < len(self.source.lyrics)
+                            else []
+                        )
+                    ),
+                )
+                while now < t + start:
+                    if (
+                        not self.voice_state.current[0].get_name()
+                        == self.source.get_name()
+                    ):
+                        return
+                    await asyncio.sleep(0.1)
+                    now = time.time()
+                await msg.edit(embed=embed)
 
 
 class VoiceState:
     # TODO: implement the event loop
-    def __init__(self, ctx: commands.Context):
+    def __init__(self, bot: commands.Bot):
         # TODO: implement a queue here
-        pass
+        self.bot = bot
+        self.queue = SongQueue()
+        self.current = None
+        self.loop = asyncio.get_event_loop()
+        self.next = asyncio.Event()
+        self.player = bot.loop.create_task(self.audio_player())
+
+    def __del__(self):
+        self.player.cancel()
 
     def skip(self, num: int = 1):
         pass
 
-    def add(self, song: Song, right_away: bool = False, lyrics: bool = True):
-        pass
+    async def add(self, song: Song, right_away: bool = False, lyrics: bool = True):
+        if not right_away:
+            await self.queue.put((song, lyrics))
 
     def remove(self, num: int):
-        pass
+        self.queue.remove(num - 1)
 
     async def connect(self, ctx):
         channel = ctx.author.voice.channel
@@ -115,16 +190,46 @@ class VoiceState:
             if self.vc.channel.id == channel.id:
                 self.vc.stop()
                 return
-            await self.vc.move_to(channel)
+            self.vc = await self.vc.move_to(channel)
         else:
-            await channel.connect()
+            self.vc = await channel.connect()
+        self.ctx = ctx
+
+    async def audio_player(self):
+        while True:
+            try:
+                async with timeout(180):
+                    self.current = await self.queue.get()
+            except asyncio.TimeoutError:
+                self.bot.loop.create_task(self.stop())
+                return
+            lyric_client = LyricPlayer(
+                self.vc, self.ctx, self.current[0], self, self.current[1]
+            )
+            self.loop.create_task(lyric_client.start())
+            self.vc.play(discord.FFmpegPCMAudio(source=self.current[0].path))
+            await self.bot.change_presence(
+                activity=discord.Activity(
+                    type=discord.ActivityType.listening, name=self.current[0].get_name()
+                )
+            )
+            while self.vc.is_playing():
+                await asyncio.sleep(1)
+            await self.bot.change_presence(activity=None)
+            print("hello?")
+
+    async def stop(self):
+        self.queue.clear()
+        if self.vc:
+            await self.vc.disconnect()
+            self.voice = None
 
 
 class Music(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.log = bot.log
-        self.voice_state = VoiceState(bot)
+        self.voice_state = None
 
         # read configuration
         self.log.debug("Reading music configuration")
@@ -158,10 +263,10 @@ class Music(commands.Cog):
     async def get_voice_state(self, ctx):
         if self.voice_state:
             return self.voice_state
-        self.voice_state = VoiceState(ctx)
+        self.voice_state = VoiceState(self.bot)
         await self.voice_state.connect(ctx)
 
-    async def find_songs(self, query) -> list:
+    def find_songs(self, query) -> list:
         args = query.lower().split()
         sources = []
         for song in self.songs:
@@ -172,17 +277,36 @@ class Music(commands.Cog):
                 sources.append(song)
         return sources
 
+    @cog_ext.cog_slash(
+        name="play",
+        description="Play a moosic",
+        options=[
+            manage_commands.create_option(
+                name="query",
+                description="Tags to search for",
+                option_type=3,
+                required=False,
+            ),
+            manage_commands.create_option(
+                name="number",
+                description="Song number from search",
+                option_type=4,
+                required=False,
+            ),
+        ],
+        guild_ids=[DEBUG_GUILD],
+    )
     async def play(
         self,
         ctx,
         query="",
         number: int = 1,
-        random: bool = False,
+        play_random: bool = False,
         show_lyrics: bool = True,
     ):
         # treat numbers <= 0 as play all
         play_all = number <= 0
-        if not query and not random:
+        if query and not play_random:
             # if there is a query
             try:
                 sources = self.find_songs(query)
@@ -196,18 +320,24 @@ class Music(commands.Cog):
             # if query is empty play a random song
             if play_all:
                 sources = self.songs.copy()
-                random.shuffle(sources)
             else:
                 sources = [random.choice(self.songs)]
 
-        try:
-            self.get_voice_state(ctx)
-        except AttributeError:
-            await ctx.send("You are not in a voice channel.")
-            return
+        # if there's only one it doesn't matter if more we want to shuffle them
+        random.shuffle(sources)
 
-        # TODO: push to queue and report to user
-        # Added 2 songs if more than 1, if 1 output song name
+        try:
+            await self.get_voice_state(ctx)
+        except AttributeError:
+            return await ctx.send("You are not in a voice channel.")
+
+        for s in sources:
+            await self.voice_state.add(s, lyrics=show_lyrics)
+
+        if len(sources) > 1:
+            await ctx.send(f"Added {len(sources)} songs to the queue.")
+        else:
+            await ctx.send(f"Added **{sources[0].get_name()}** to the queue.")
 
     async def play_now(self, ctx, query="", number: int = 1, show_lyrics: bool = True):
         pass
@@ -236,14 +366,16 @@ class Music(commands.Cog):
     )
     async def search(self, ctx, query, page: int = 1):
         page -= 1
-        sources = await self.find_songs(query)
+        sources = self.find_songs(query)
         offset = page * ITEMS_PER_PAGE
         if len(sources) < offset:
             return await ctx.send(f"Page not found for query '{query}'.")
 
         embed = discord.Embed(title=f"Moosic containing '{query}'", description="")
         for i, n in enumerate(sources[offset : offset + ITEMS_PER_PAGE]):
-            embed.description += f"{offset+i+1}. {n.get_name()}\n"
+            embed.description += (
+                f"{offset+i+1}. {n.get_name()}{' [LRC]' if n.lyrics else ''}\n"
+            )
         embed.description += (
             f"\nPage {page+1} of {math.ceil(len(sources) / ITEMS_PER_PAGE)}"
         )
@@ -252,11 +384,38 @@ class Music(commands.Cog):
     async def stop(self, ctx):
         pass
 
+    @cog_ext.cog_slash(
+        name="clear", description="Clear the queue", options=[], guild_ids=[DEBUG_GUILD]
+    )
     async def clear_queue(self, ctx):
-        pass
+        self.voice_state.queue.clear()
+        await ctx.send("Cleared the queue!")
 
-    async def show_queue(self, ctx):
-        pass
+    @cog_ext.cog_slash(
+        name="queue",
+        description="Show the queue",
+        options=[
+            manage_commands.create_option(
+                name="page",
+                description="The page number to view",
+                option_type=4,
+                required=False,
+            )
+        ],
+        guild_ids=[DEBUG_GUILD],
+    )
+    async def show_queue(self, ctx, page: int = 1):
+        page -= 1
+        if len(self.voice_state.queue) < 1:
+            return await ctx.send("Nothing in the queue on this page.")
+        offset = page * ITEMS_PER_PAGE
+        embed = discord.Embed(title=f"Queue", description="")
+        for i, s in enumerate(self.voice_state.queue[offset : offset + ITEMS_PER_PAGE]):
+            embed.description += (
+                f"{offset+i+1}. {s[0].get_name()}{' [LRC]' if s[0].lyrics else ''}\n"
+            )
+        embed.description += f"\nPage {page+1} of {math.ceil(len(self.voice_state.queue) / ITEMS_PER_PAGE)}"
+        await ctx.send(embed=embed)
 
 
 def setup(bot: commands.Bot):
