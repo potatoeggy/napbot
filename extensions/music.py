@@ -11,6 +11,8 @@ import discord
 import math
 from async_timeout import timeout
 import time
+import tempfile
+import io
 
 MANUAL_LYRIC_OFFSET = 0
 ITEMS_PER_PAGE = 10
@@ -19,7 +21,7 @@ DEBUG_GUILD = 812784271294726156
 
 
 class Song:
-    def __init__(self, audio_path: str):
+    def __init__(self, audio_path: str, log=None):
         self.base_name = os.path.splitext(os.path.basename(audio_path))[0]
         self.path = audio_path
         self.path_lower = audio_path.lower()
@@ -27,18 +29,24 @@ class Song:
         self.title = None
         self.album = None
         self.track_num = None
-        self.art = None  # TODO: implement
+        self.art = None
         self.lyrics = []
         self.lyric_timestamps = []
 
         with open(os.devnull, "w") as null:
             with contextlib.redirect_stderr(null):
-                mp3 = eyed3.load(audio_path)
+                with contextlib.redirect_stdout(null):
+                    mp3: eyed3.mp3.Mp3AudioFile = eyed3.load(audio_path)
         if mp3 is not None and mp3.tag is not None:
             self.artist = mp3.tag.artist
             self.title = mp3.tag.title
             self.album = mp3.tag.album
             self.track_num = mp3.tag.track_num
+            art_frame: eyed3.id3.frames.ImageFrame = next(
+                (i for i in mp3.tag.images), None
+            )
+            if art_frame is not None:
+                self.art = art_frame.image_data
 
         try:
             lrc_file = os.path.splitext(audio_path)[0] + ".lrc"
@@ -49,6 +57,7 @@ class Song:
             data = []
         except UnicodeDecodeError:
             # invalid LRC
+            log.warn(f"{self.get_name()} contains invalid lyrics.")
             data = []
 
         for s in data:
@@ -106,6 +115,7 @@ class LyricPlayer:
         self.show_lyrics = show_lyrics
 
     async def start(self):
+        # grab file
         embed = discord.Embed(title=self.source.get_name(), description="")
         if self.source.title:
             embed.title = self.source.title
@@ -113,6 +123,7 @@ class LyricPlayer:
             embed.description += f"{self.source.artist}\n"
         if self.source.album:
             embed.description += f"{self.source.album}\n"
+        # embed.description += f"{self.source.path}\n"
         if self.source.lyrics and self.show_lyrics:
             embed.add_field(
                 name="Lyrics",
@@ -122,7 +133,14 @@ class LyricPlayer:
                     ]
                 ),
             )
-        msg = await self.ctx.channel.send(embed=embed)
+
+        if self.source.art:
+            with io.BytesIO(self.source.art) as imagedata:
+                file = discord.File(fp=imagedata, filename="cover.jpg")
+                embed.set_thumbnail(url="attachment://cover.jpg")
+                msg = await self.ctx.channel.send(embed=embed, file=file)
+        else:
+            msg = await self.ctx.channel.send(embed=embed)
 
         if self.show_lyrics:
             start = time.time()
@@ -258,7 +276,7 @@ class Music(commands.Cog):
             for name in files:
                 if name.endswith(".mp3"):
                     try:
-                        self.songs.append(Song(os.path.join(root, name)))
+                        self.songs.append(Song(os.path.join(root, name), self.log))
                     except IOError:
                         # expected if file not found
                         pass
