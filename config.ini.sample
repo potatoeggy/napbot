@@ -1,0 +1,10 @@
+[napbot]
+LogLevel=0
+BotToken=
+DebugGuilds=
+AdminIds=
+Modules=music
+
+[music]
+MusicPath=/media/Moosic
+CurrentSongAsStatus=True

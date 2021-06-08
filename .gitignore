@@ -1,6 +1,6 @@
-config.json
+config.ini
 data.json
-data.json.*
+*.log
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
