@@ -13,6 +13,7 @@ from async_timeout import timeout
 import time
 import tempfile
 import io
+from PIL import Image
 
 MANUAL_LYRIC_OFFSET = 0
 ITEMS_PER_PAGE = 10
@@ -32,7 +33,9 @@ class Song:
         self.art = None
         self.lyrics = []
         self.lyric_timestamps = []
+        self.dominant_colour = None
 
+        # get art
         with open(os.devnull, "w") as null:
             with contextlib.redirect_stderr(null):
                 with contextlib.redirect_stdout(null):
@@ -47,7 +50,15 @@ class Song:
             )
             if art_frame is not None:
                 self.art = art_frame.image_data
+                with io.BytesIO(self.art) as imagedata:
+                    image = (
+                        Image.open(imagedata).convert("RGB").resize((1, 1), resample=0)
+                    )
+                    self.dominant_colour = discord.Colour.from_rgb(
+                        *image.getpixel((0, 0))
+                    )
 
+        # parse lyrics
         try:
             lrc_file = os.path.splitext(audio_path)[0] + ".lrc"
             with open(lrc_file, "r") as file:
@@ -80,6 +91,11 @@ class Song:
                 pass
 
     def get_name(self):
+        if not (self.title and self.artist):
+            return self.base_name
+        return f"{self.title} - {self.artist}"
+
+    def __str__(self):
         if not (self.title and self.artist):
             return self.base_name
         return f"{self.title} - {self.artist}"
@@ -169,6 +185,7 @@ class LyricPlayer:
             with io.BytesIO(self.source.art) as imagedata:
                 file = discord.File(fp=imagedata, filename="cover.jpg")
                 embed.set_thumbnail(url="attachment://cover.jpg")
+                embed.color = self.source.dominant_colour
                 msg = await self.ctx.channel.send(
                     embed=embed,
                     file=file,
