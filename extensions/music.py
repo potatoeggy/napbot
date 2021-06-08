@@ -57,7 +57,7 @@ class Song:
             data = []
         except UnicodeDecodeError:
             # invalid LRC
-            log.warn(f"{self.get_name()} contains invalid lyrics.")
+            log.warn(f"{self.get_name()} is not in UTF-8.")
             data = []
 
         for s in data:
@@ -115,7 +115,7 @@ class FixLyricButton(discord.ui.View):
         self.title = title
         self.bot = bot
 
-    @discord.ui.button(label="Request lyric fix", style=discord.ButtonStyle.green)
+    @discord.ui.button(label="Request lyric fix", style=discord.ButtonStyle.blurple)
     async def ping_admin(
         self, button: discord.ui.Button, interaction: discord.Interaction
     ):
@@ -360,7 +360,8 @@ class Music(commands.Cog):
         number: int = 1,
         play_random: bool = False,
         show_lyrics: bool = True,
-    ):
+        return_to_function: bool = False,
+    ) -> list:
         # treat numbers <= 0 as play all
         play_all = number <= 0
         if query and not play_random:
@@ -388,6 +389,9 @@ class Music(commands.Cog):
         except AttributeError:
             return await ctx.send("You are not in a voice channel.")
 
+        if return_to_function:
+            return sources
+
         for s in sources:
             await self.voice_state.add(s, lyrics=show_lyrics)
 
@@ -396,11 +400,68 @@ class Music(commands.Cog):
         else:
             await ctx.send(f"Added **{sources[0].get_name()}** to the queue.")
 
-    async def play_now(self, ctx, query="", number: int = 1, show_lyrics: bool = True):
-        pass
+    @cog_ext.cog_slash(
+        name="playnow",
+        description="Play a moosic now",
+        options=[
+            manage_commands.create_option(
+                name="query",
+                description="Tags to search for",
+                option_type=3,
+                required=False,
+            ),
+            manage_commands.create_option(
+                name="number",
+                description="Song number from search",
+                option_type=4,
+                required=False,
+            ),
+        ],
+        guild_ids=[DEBUG_GUILD],
+    )
+    async def play_now(
+        self,
+        ctx,
+        query="",
+        number: int = 1,
+        play_random: bool = False,
+        show_lyrics: bool = True,
+    ):
+        await self.play_next(ctx, query, number, play_random, show_lyrics)
+        await self.voice_state.skip()
 
-    async def play_next(self, ctx, query="", number: int = 1, show_lyrics: bool = True):
-        pass
+    @cog_ext.cog_slash(
+        name="playnext",
+        description="Play a moosic right after",
+        options=[
+            manage_commands.create_option(
+                name="query",
+                description="Tags to search for",
+                option_type=3,
+                required=False,
+            ),
+            manage_commands.create_option(
+                name="number",
+                description="Song number from search",
+                option_type=4,
+                required=False,
+            ),
+        ],
+        guild_ids=[DEBUG_GUILD],
+    )
+    async def play_next(
+        self,
+        ctx,
+        query="",
+        number: int = 1,
+        play_random: bool = False,
+        show_lyrics: bool = True,
+    ):
+        sources = await self.play(
+            ctx, query, number, play_random, show_lyrics, return_to_function=True
+        )
+        for s in sources:
+            await self.voice_state.add(s, True, show_lyrics)
 
     @cog_ext.cog_slash(
         name="skip",
@@ -408,7 +469,7 @@ class Music(commands.Cog):
         options=[
             manage_commands.create_option(
                 name="number",
-                description="The number of tracks to skip",
+                description="The number of tracks to skip / the track number to skip to",
                 option_type=4,
                 required=False,
             )
