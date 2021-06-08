@@ -105,6 +105,9 @@ class SongQueue(asyncio.Queue):
         del self._queue[index]
         # TODO: no idea why but the queue is just broken now
 
+    def putfirst(self, item):
+        self._queue.appendleft(item)
+
 
 class FixLyricButton(discord.ui.View):
     def __init__(self, bot: commands.Bot, title):
@@ -235,6 +238,8 @@ class VoiceState:
     async def add(self, song: Song, right_away: bool = False, lyrics: bool = True):
         if not right_away:
             await self.queue.put((song, lyrics))
+        else:
+            self.queue.putfirst((song, lyrics))
 
     def remove(self, num: int):
         self.queue.remove(num - 1)
@@ -286,7 +291,9 @@ class Music(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.log = bot.log
-        self.voice_state = None
+        self.voice_state = (
+            None  # TODO: it is likely voice_state is not being reset properly
+        )
 
         # read configuration
         self.log.debug("Reading music configuration")
@@ -346,7 +353,7 @@ class Music(commands.Cog):
             ),
             manage_commands.create_option(
                 name="number",
-                description="Song number from search",
+                description="Song number from search, or 0 for all songs that match search",
                 option_type=4,
                 required=False,
             ),
@@ -354,6 +361,16 @@ class Music(commands.Cog):
         guild_ids=[DEBUG_GUILD],
     )
     async def play(
+        self,
+        ctx,
+        query="",
+        number: int = 1,
+        play_random: bool = False,
+        show_lyrics: bool = True,
+    ):
+        await self._play(ctx, query, number, play_random, show_lyrics)
+
+    async def _play(
         self,
         ctx,
         query="",
@@ -412,7 +429,7 @@ class Music(commands.Cog):
             ),
             manage_commands.create_option(
                 name="number",
-                description="Song number from search",
+                description="Song number from search, or 0 for all songs that match search",
                 option_type=4,
                 required=False,
             ),
@@ -427,7 +444,17 @@ class Music(commands.Cog):
         play_random: bool = False,
         show_lyrics: bool = True,
     ):
-        await self.play_next(ctx, query, number, play_random, show_lyrics)
+        sources = await self._play(
+            ctx, query, number, play_random, show_lyrics, return_to_function=True
+        )
+        for s in sources:
+            await self.voice_state.add(s, True, show_lyrics)
+        if len(sources) > 1:
+            await ctx.send(
+                f"Playing **{sources[0].get_name()}**, added {len(sources)-1} songs to the queue."
+            )
+        else:
+            await ctx.send(f"Playing **{sources[0].get_name()}**.")
         await self.voice_state.skip()
 
     @cog_ext.cog_slash(
@@ -442,7 +469,7 @@ class Music(commands.Cog):
             ),
             manage_commands.create_option(
                 name="number",
-                description="Song number from search",
+                description="Song number from search, or 0 for all songs that match search",
                 option_type=4,
                 required=False,
             ),
@@ -457,11 +484,15 @@ class Music(commands.Cog):
         play_random: bool = False,
         show_lyrics: bool = True,
     ):
-        sources = await self.play(
+        sources = await self._play(
             ctx, query, number, play_random, show_lyrics, return_to_function=True
         )
         for s in sources:
             await self.voice_state.add(s, True, show_lyrics)
+        if len(sources) > 1:
+            await ctx.send(f"Added {len(sources)} songs to the queue.")
+        else:
+            await ctx.send(f"Added **{sources[0].get_name()}** to the queue.")
 
     @cog_ext.cog_slash(
         name="skip",
