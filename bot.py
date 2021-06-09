@@ -33,4 +33,13 @@ if __name__ == "__main__":
     async def on_ready():
         log.info(f"Logged in to Discord as {bot.user}.")
 
+    @slash.slash(name="crash", description="Crash the bot", options=[], guild_ids=[])
+    async def crash(self, ctx):
+        # TODO: implement admin checking
+        if ctx.author.id in config.admin_ids:
+            await ctx.send("Crashing...")
+            exit(1)
+        else:
+            await ctx.send("You are not an administrator.")
+
     bot.run(config.bot_token)
