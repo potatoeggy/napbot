@@ -14,6 +14,7 @@ import time
 import tempfile
 import io
 from PIL import Image
+import traceback
 
 MANUAL_LYRIC_OFFSET = 0
 ITEMS_PER_PAGE = 10
@@ -241,9 +242,14 @@ class VoiceState:
         self.loop = asyncio.get_event_loop()
         self.next = asyncio.Event()
         self.player = bot.loop.create_task(self.audio_player())
+        self.vc = None
+        self.audio_running = False
 
     def __del__(self):
         self.player.cancel()
+
+    def __bool__(self):
+        return self.vc
 
     async def skip(self, num: int = 1):
         num -= 1
@@ -264,6 +270,8 @@ class VoiceState:
     async def connect(self, ctx):
         channel = ctx.author.voice.channel
         self.vc = ctx.guild.voice_client
+        if not self.audio_running:
+            self.bot.loop.create_task(self.audio_player())
         if self.vc:
             if self.vc.channel.id == channel.id:
                 self.vc.stop()
@@ -274,12 +282,14 @@ class VoiceState:
         self.ctx = ctx
 
     async def audio_player(self):
+        self.audio_running = True
         while True:
             try:
                 async with timeout(180):
                     self.current = await self.queue.get()
             except asyncio.TimeoutError:
                 self.bot.loop.create_task(self.stop())
+                self.audio_running = False
                 return
             lyric_client = LyricPlayer(
                 self.vc, self.ctx, self.current[0], self, self.bot, self.current[1]
@@ -291,7 +301,7 @@ class VoiceState:
                     type=discord.ActivityType.listening, name=self.current[0].get_name()
                 )
             )
-            while self.vc.is_playing():
+            while self.vc and self.vc.is_playing() and self.vc.is_connected():
                 await asyncio.sleep(1)
             await self.bot.change_presence(activity=None)
             self.current = None
@@ -300,6 +310,7 @@ class VoiceState:
         self.queue.clear()
         await self.bot.change_presence(activity=None)
         if self.vc:
+            self.vc.stop()
             await self.vc.disconnect()
             self.vc = None
 
@@ -308,9 +319,7 @@ class Music(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.log = bot.log
-        self.voice_state = (
-            None  # TODO: it is likely voice_state is not being reset properly
-        )
+        self.voice_state = VoiceState(self.bot)
 
         # read configuration
         self.log.debug("Reading music configuration")
@@ -342,9 +351,6 @@ class Music(commands.Cog):
         self.log.info(f"Found {len(self.songs)} songs.")
 
     async def get_voice_state(self, ctx):
-        if self.voice_state:
-            return self.voice_state
-        self.voice_state = VoiceState(self.bot)
         await self.voice_state.connect(ctx)
 
     def find_songs(self, query) -> list:
@@ -421,6 +427,7 @@ class Music(commands.Cog):
         try:
             await self.get_voice_state(ctx)
         except AttributeError:
+            print(traceback.format_exc())
             return await ctx.send("You are not in a voice channel.")
 
         if return_to_function:
@@ -572,7 +579,6 @@ class Music(commands.Cog):
     )
     async def stop(self, ctx):
         await self.voice_state.stop()
-        del self.voice_state
         await ctx.send("Goodbye!")
 
     @cog_ext.cog_slash(
