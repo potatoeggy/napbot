@@ -271,10 +271,9 @@ class VoiceState:
         channel = ctx.author.voice.channel
         self.vc = ctx.guild.voice_client
         if not self.audio_running:
-            self.bot.loop.create_task(self.audio_player())
+            self.player = self.bot.loop.create_task(self.audio_player())
         if self.vc:
             if self.vc.channel.id == channel.id:
-                self.vc.stop()
                 return
             self.vc = await self.vc.move_to(channel)
         else:
