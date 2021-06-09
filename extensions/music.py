@@ -1,6 +1,10 @@
+MANUAL_LYRIC_OFFSET = 0
+ITEMS_PER_PAGE = 10
+MAX_LINES = 5
+DEBUG_GUILD = 812784271294726156
+
 from discord.ext import commands
 from discord_slash import cog_ext, manage_commands
-import eyed3
 import os
 import re
 import contextlib
@@ -13,17 +17,28 @@ from async_timeout import timeout
 import time
 import tempfile
 import io
-from PIL import Image
-import traceback
 
-MANUAL_LYRIC_OFFSET = 0
-ITEMS_PER_PAGE = 10
-MAX_LINES = 5
-DEBUG_GUILD = 812784271294726156
+try:
+    from PIL import Image
+
+    pillow_installed = True
+except ImportError:
+    print(" WARN: pillow is not installed, disabling dominant colour detection")
+    pillow_installed = False
+
+try:
+    import eyed3
+
+    eyed3_installed = True
+except ImportError:
+    print(
+        " WARN: eyed3 is not installed, disabling metadata"
+    )  # haha where logging module
+    eyed3_installed = False
 
 
 class Song:
-    def __init__(self, audio_path: str, log=None):
+    def __init__(self, audio_path: str, log):
         self.base_name = os.path.splitext(os.path.basename(audio_path))[0]
         self.path = audio_path
         self.path_lower = audio_path.lower()
@@ -37,27 +52,32 @@ class Song:
         self.dominant_colour = None
 
         # get art
-        with open(os.devnull, "w") as null:
-            with contextlib.redirect_stderr(null):
-                with contextlib.redirect_stdout(null):
-                    mp3: eyed3.mp3.Mp3AudioFile = eyed3.load(audio_path)
-        if mp3 is not None and mp3.tag is not None:
-            self.artist = mp3.tag.artist
-            self.title = mp3.tag.title
-            self.album = mp3.tag.album
-            self.track_num = mp3.tag.track_num
-            art_frame: eyed3.id3.frames.ImageFrame = next(
-                (i for i in mp3.tag.images), None
-            )
-            if art_frame is not None:
-                self.art = art_frame.image_data
-                with io.BytesIO(self.art) as imagedata:
-                    image = (
-                        Image.open(imagedata).convert("RGB").resize((1, 1), resample=0)
-                    )
-                    self.dominant_colour = discord.Colour.from_rgb(
-                        *image.getpixel((0, 0))
-                    )
+        if eyed3_installed:
+            with open(os.devnull, "w") as null:
+                with contextlib.redirect_stderr(null):
+                    with contextlib.redirect_stdout(null):
+                        mp3: eyed3.mp3.Mp3AudioFile = eyed3.load(audio_path)
+            if mp3 is not None and mp3.tag is not None:
+                self.artist = mp3.tag.artist
+                self.title = mp3.tag.title
+                self.album = mp3.tag.album
+                self.track_num = mp3.tag.track_num
+                art_frame: eyed3.id3.frames.ImageFrame = next(
+                    (i for i in mp3.tag.images), None
+                )
+
+                if art_frame is not None:
+                    self.art = art_frame.image_data
+                    if pillow_installed:
+                        with io.BytesIO(self.art) as imagedata:
+                            image = (
+                                Image.open(imagedata)
+                                .convert("RGB")
+                                .resize((1, 1), resample=0)
+                            )
+                            self.dominant_colour = discord.Colour.from_rgb(
+                                *image.getpixel((0, 0))
+                            )
 
         # parse lyrics
         try:
@@ -124,112 +144,6 @@ class SongQueue(asyncio.Queue):
 
     def putfirst(self, item):
         self._queue.appendleft(item)
-
-
-class FixLyricButton(discord.ui.View):
-    def __init__(self, bot: commands.Bot, title):
-        super().__init__()
-        self.users_to_ping = list(
-            map(int, bot.config.config["napbot"].get("AdminIds", "").split(","))
-        )
-        self.title = title
-        self.bot = bot
-
-    @discord.ui.button(label="Request lyric fix", style=discord.ButtonStyle.blurple)
-    async def ping_admin(
-        self, button: discord.ui.Button, interaction: discord.Interaction
-    ):
-        for admin in self.users_to_ping:
-            try:
-                channel = await (await self.bot.fetch_user(admin)).create_dm()
-                await channel.send(
-                    f"**{str(interaction.user)}** would like you to update the lyrics for **{self.title}**."
-                )
-            except TypeError:
-                self.bot.log.error(f"{admin} is not a valid user id.")
-        button.label = "Lyric fix requested"
-        button.style = discord.ButtonStyle.grey
-        button.disabled = True
-        await interaction.response.edit_message(view=self)
-
-
-class LyricPlayer:
-    def __init__(self, vc, ctx, source, voice_state, bot, show_lyrics):
-        self.vc = vc
-        self.ctx = ctx
-        self.source = source
-        self.voice_state = voice_state
-        self.bot = bot
-        self.show_lyrics = show_lyrics
-
-    async def start(self):
-        # grab file
-        embed = discord.Embed(title=self.source.get_name(), description="")
-        if self.source.title:
-            embed.title = self.source.title
-        if self.source.artist:
-            embed.description += f"{self.source.artist}\n"
-        if self.source.album:
-            embed.description += f"{self.source.album}\n"
-        # embed.description += f"{self.source.path}\n"
-        if self.source.lyrics and self.show_lyrics:
-            embed.add_field(
-                name="Lyrics",
-                value="\n".join(
-                    self.source.lyrics[
-                        : min(MAX_LINES * 2 + 1, len(self.source.lyrics))
-                    ]
-                ),
-            )
-
-        if self.source.art:
-            with io.BytesIO(self.source.art) as imagedata:
-                file = discord.File(fp=imagedata, filename="cover.jpg")
-                embed.set_thumbnail(url="attachment://cover.jpg")
-                embed.color = self.source.dominant_colour
-                msg = await self.ctx.channel.send(
-                    embed=embed,
-                    file=file,
-                    view=FixLyricButton(self.bot, self.source.get_name()),
-                )
-        else:
-            msg = await self.ctx.channel.send(
-                embed=embed, view=FixLyricButton(self.bot, self.source.get_name())
-            )
-
-        if self.show_lyrics:
-            start = time.time()
-            for i, t in enumerate(self.source.lyric_timestamps):
-                now = time.time()
-                lines_before = max(
-                    0, min(i - MAX_LINES, len(self.source.lyrics) - MAX_LINES * 2)
-                )
-                lines_after = min(
-                    len(self.source.lyrics),
-                    max(i + MAX_LINES, MAX_LINES * 2 + 1 - lines_before),
-                )
-                embed.set_field_at(
-                    0,
-                    name="Lyrics",
-                    value="\n".join(
-                        self.source.lyrics[lines_before:i]
-                        + [f"**{self.source.lyrics[i]}**"]
-                        + (
-                            self.source.lyrics[i + 1 : lines_after]
-                            if i + 1 < len(self.source.lyrics)
-                            else []
-                        )
-                    ),
-                )
-                while now < t + start:
-                    if (
-                        not self.voice_state.current[0].get_name()
-                        == self.source.get_name()
-                    ):
-                        return
-                    await asyncio.sleep(0.1)
-                    now = time.time()
-                await msg.edit(embed=embed)
 
 
 class VoiceState:
@@ -314,8 +228,130 @@ class VoiceState:
             self.vc = None
 
 
+class MusicPanel(discord.ui.View):
+    def __init__(self, bot: commands.Bot, title, voice_state: VoiceState):
+        super().__init__()
+        self.users_to_ping = list(
+            map(int, bot.config.config["napbot"].get("AdminIds", "").split(","))
+        )
+        self.title = title
+        self.bot = bot
+        self.voice_state = voice_state
+
+    @discord.ui.button(emoji="⏭️", style=discord.ButtonStyle.primary)
+    async def skip_track(
+        self, button: discord.ui.Button, interaction: discord.Interaction
+    ):
+        await self.voice_state.skip()
+        button.disabled = True
+        button.style = discord.ButtonStyle.grey
+        button.emoji = "✅"
+        await interaction.response.edit_message(view=self)
+
+    @discord.ui.button(label="Request lyric fix", style=discord.ButtonStyle.green)
+    async def ping_admin(
+        self, button: discord.ui.Button, interaction: discord.Interaction
+    ):
+        for admin in self.users_to_ping:
+            try:
+                channel = await (await self.bot.fetch_user(admin)).create_dm()
+                await channel.send(
+                    f"**{str(interaction.user)}** would like you to update the lyrics for **{self.title}**."
+                )
+            except TypeError:
+                self.bot.log.error(f"{admin} is not a valid user id.")
+        button.label = "Lyric fix requested"
+        button.style = discord.ButtonStyle.grey
+        button.disabled = True
+        await interaction.response.edit_message(view=self)
+
+
+class LyricPlayer:
+    def __init__(self, vc, ctx, source, voice_state, bot, show_lyrics):
+        self.vc = vc
+        self.ctx = ctx
+        self.source = source
+        self.voice_state = voice_state
+        self.bot = bot
+        self.show_lyrics = show_lyrics
+
+    async def start(self):
+        # grab file
+        embed = discord.Embed(title=self.source.get_name(), description="")
+        if self.source.title:
+            embed.title = self.source.title
+        if self.source.artist:
+            embed.description += f"{self.source.artist}\n"
+        if self.source.album:
+            embed.description += f"{self.source.album}\n"
+        # embed.description += f"{self.source.path}\n"
+        if self.source.lyrics and self.show_lyrics:
+            embed.add_field(
+                name="Lyrics",
+                value="\n".join(
+                    self.source.lyrics[
+                        : min(MAX_LINES * 2 + 1, len(self.source.lyrics))
+                    ]
+                ),
+            )
+
+        if self.source.art:
+            with io.BytesIO(self.source.art) as imagedata:
+                file = discord.File(fp=imagedata, filename="cover.jpg")
+                embed.set_thumbnail(url="attachment://cover.jpg")
+                if self.source.dominant_colour:
+                    embed.color = self.source.dominant_colour
+                msg = await self.ctx.channel.send(
+                    embed=embed,
+                    file=file,
+                    view=MusicPanel(self.bot, self.source.get_name(), self.voice_state),
+                )
+        else:
+            msg = await self.ctx.channel.send(
+                embed=embed,
+                view=MusicPanel(self.bot, self.source.get_name(), self.voice_state),
+            )
+
+        if self.show_lyrics:
+            start = time.time()
+            for i, t in enumerate(self.source.lyric_timestamps):
+                now = time.time()
+                lines_before = max(
+                    0, min(i - MAX_LINES, len(self.source.lyrics) - MAX_LINES * 2)
+                )
+                lines_after = min(
+                    len(self.source.lyrics),
+                    max(i + MAX_LINES, MAX_LINES * 2 + 1 - lines_before),
+                )
+                embed.set_field_at(
+                    0,
+                    name="Lyrics",
+                    value="\n".join(
+                        self.source.lyrics[lines_before:i]
+                        + [f"**{self.source.lyrics[i]}**"]
+                        + (
+                            self.source.lyrics[i + 1 : lines_after]
+                            if i + 1 < len(self.source.lyrics)
+                            else []
+                        )
+                    ),
+                )
+                while now < t + start:
+                    if (
+                        not self.voice_state.current[0].get_name()
+                        == self.source.get_name()
+                    ):
+                        return
+                    await asyncio.sleep(0.1)
+                    now = time.time()
+                await msg.edit(embed=embed)
+
+
 class Music(commands.Cog):
     def __init__(self, bot: commands.Bot):
+        global pillow_installed  # aiya
+        global eyed3_installed  # aiya x2
+
         self.bot = bot
         self.log = bot.log
         self.voice_state = VoiceState(self.bot)
@@ -328,6 +364,8 @@ class Music(commands.Cog):
             self.show_song_status = conf.getboolean(
                 "CurrentSongAsStatus", fallback=False
             )
+            pillow_installed = conf.getboolean("DominantColorEmbed", pillow_installed)
+            eyed3_installed = conf.getboolean("Id3Metadata", eyed3_installed)
         else:
             self.root_path = "/media/Moosic"
             self.show_song_status = False
