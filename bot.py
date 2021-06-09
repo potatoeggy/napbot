@@ -33,7 +33,12 @@ if __name__ == "__main__":
     async def on_ready():
         log.info(f"Logged in to Discord as {bot.user}.")
 
-    @slash.slash(name="crash", description="Crash the bot", options=[], guild_ids=[])
+    @slash.slash(
+        name="crash",
+        description="Crash the bot",
+        options=[],
+        guild_ids=config.debug_guilds,
+    )
     async def crash(self, ctx):
         if ctx.author.id in config.admin_ids:
             await ctx.send("Crashing...")
