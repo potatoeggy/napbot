@@ -68,7 +68,7 @@ class Song:
             data = []
         except UnicodeDecodeError:
             # invalid LRC
-            log.warn(f"{self.get_name()} is not in UTF-8.")
+            log.warn(f"{self.get_name()}'s lyrics are not in UTF-8.")
             data = []
 
         for s in data:
