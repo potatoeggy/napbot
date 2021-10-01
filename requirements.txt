@@ -1,2 +1,2 @@
-discord.py>=2.0.0
+git+https://github.com/Rapptz/discord.py.git@c1c64575985de28aa1d373e14a313e54c7786baf#egg=discord.py
 discord-py-slash-command==1.1.1
