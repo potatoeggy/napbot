@@ -1,7 +1,7 @@
 MANUAL_LYRIC_OFFSET = 0
 ITEMS_PER_PAGE = 10
 MAX_LINES = 5
-DEBUG_GUILD = 812784271294726156
+DEBUG_GUILDS = [812784271294726156]
 
 from discord.ext import commands
 from discord_slash import cog_ext, manage_commands
@@ -419,7 +419,7 @@ class Music(commands.Cog):
                 required=False,
             ),
         ],
-        guild_ids=[DEBUG_GUILD],
+        guild_ids=DEBUG_GUILDS,
     )
     @commands.command()
     async def play(
@@ -497,7 +497,7 @@ class Music(commands.Cog):
                 required=False,
             ),
         ],
-        guild_ids=[DEBUG_GUILD],
+        guild_ids=DEBUG_GUILDS,
     )
     @commands.command(name="playnow")
     async def play_now(
@@ -538,7 +538,7 @@ class Music(commands.Cog):
                 required=False,
             ),
         ],
-        guild_ids=[DEBUG_GUILD],
+        guild_ids=DEBUG_GUILDS,
     )
     async def play_next(
         self,
@@ -569,7 +569,7 @@ class Music(commands.Cog):
                 required=False,
             )
         ],
-        guild_ids=[DEBUG_GUILD],
+        guild_ids=DEBUG_GUILDS,
     )
     async def skip(self, ctx, number: int = 1):
         await self.voice_state.skip(number)
@@ -592,7 +592,7 @@ class Music(commands.Cog):
                 required=False,
             ),
         ],
-        guild_ids=[DEBUG_GUILD],
+        guild_ids=DEBUG_GUILDS,
     )
     async def search(self, ctx, query, page: int = 1):
         page -= 1
@@ -615,14 +615,14 @@ class Music(commands.Cog):
         name="stop",
         description="Stop playback and disconnect",
         options=[],
-        guild_ids=[DEBUG_GUILD],
+        guild_ids=DEBUG_GUILDS,
     )
     async def stop(self, ctx):
         await self.voice_state.stop()
         await ctx.send("Goodbye!")
 
     @cog_ext.cog_slash(
-        name="clear", description="Clear the queue", options=[], guild_ids=[DEBUG_GUILD]
+        name="clear", description="Clear the queue", options=[], guild_ids=DEBUG_GUILDS
     )
     async def clear_queue(self, ctx):
         self.voice_state.queue.clear()
@@ -639,7 +639,7 @@ class Music(commands.Cog):
                 required=False,
             )
         ],
-        guild_ids=[DEBUG_GUILD],
+        guild_ids=DEBUG_GUILDS,
     )
     async def show_queue(self, ctx, page: int = 1):
         page -= 1
