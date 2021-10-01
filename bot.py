@@ -39,7 +39,8 @@ if __name__ == "__main__":
         options=[],
         guild_ids=config.debug_guilds,
     )
-    async def crash(self, ctx):
+    @bot.command(name="crash")
+    async def crash(ctx):
         if ctx.author.id in config.admin_ids:
             await ctx.send("Crashing...")
             exit(1)

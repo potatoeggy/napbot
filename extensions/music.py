@@ -421,6 +421,7 @@ class Music(commands.Cog):
         ],
         guild_ids=[DEBUG_GUILD],
     )
+    @commands.command()
     async def play(
         self,
         ctx,
@@ -498,6 +499,7 @@ class Music(commands.Cog):
         ],
         guild_ids=[DEBUG_GUILD],
     )
+    @commands.command(name="playnow")
     async def play_now(
         self,
         ctx,
