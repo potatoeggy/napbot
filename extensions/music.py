@@ -17,6 +17,7 @@ from async_timeout import timeout
 import time
 import tempfile
 import io
+import traceback
 
 try:
     from PIL import Image
