@@ -1,17 +1,18 @@
 import traceback
 import io
 import time
-from async_timeout import timeout
 import math
-import discord
 import itertools
 import random
 import asyncio
 import contextlib
 import re
 import os
+
+import discord
 from discord_slash import cog_ext, manage_commands
 from discord.ext import commands
+from async_timeout import timeout
 
 MANUAL_LYRIC_OFFSET = 0
 ITEMS_PER_PAGE = 10
@@ -141,16 +142,13 @@ class SongQueue(asyncio.Queue):
 
     def remove(self, index: int):
         del self._queue[index]
-        # TODO: no idea why but the queue is just broken now
 
     def putfirst(self, item):
         self._queue.appendleft(item)
 
 
 class VoiceState:
-    # TODO: implement the event loop
     def __init__(self, bot: commands.Bot):
-        # TODO: implement a queue here
         self.bot = bot
         self.queue = SongQueue()
         self.current = None
@@ -655,7 +653,7 @@ class Music(commands.Cog):
         if len(self.voice_state.queue) < 1:
             return await ctx.send("Nothing in the queue on this page.")
         offset = page * ITEMS_PER_PAGE
-        embed = discord.Embed(title=f"Queue", description="")
+        embed = discord.Embed(title="Queue", description="")
         for i, s in enumerate(self.voice_state.queue[offset : offset + ITEMS_PER_PAGE]):
             embed.description += (
                 f"{offset+i+1}. {s[0].get_name()}{' [LRC]' if s[0].lyrics else ''}\n"
