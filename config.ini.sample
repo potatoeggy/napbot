@@ -1,5 +1,5 @@
 [napbot]
-LogLevel=0
+LogLevel=1
 BotToken=
 DebugGuilds=
 AdminIds=
@@ -8,3 +8,8 @@ Modules=music
 [music]
 MusicPath=/media/Moosic
 CurrentSongAsStatus=True
+DominantColorEmbed=False
+AlbumArt=True
+Id3Metadata=True
+SynchronisedLyrics=Tru
+IgnoredPaths=

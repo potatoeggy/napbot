@@ -1,23 +1,23 @@
+import traceback
+import io
+import time
+from async_timeout import timeout
+import math
+import discord
+import itertools
+import random
+import asyncio
+import contextlib
+import re
+import os
+from discord_slash import cog_ext, manage_commands
+from discord.ext import commands
+
 MANUAL_LYRIC_OFFSET = 0
 ITEMS_PER_PAGE = 10
 MAX_LINES = 5
 DEBUG_GUILDS = [812784271294726156]
 
-from discord.ext import commands
-from discord_slash import cog_ext, manage_commands
-import os
-import re
-import contextlib
-import asyncio
-import random
-import itertools
-import discord
-import math
-from async_timeout import timeout
-import time
-import tempfile
-import io
-import traceback
 
 try:
     from PIL import Image
@@ -365,6 +365,9 @@ class Music(commands.Cog):
             self.show_song_status = conf.getboolean(
                 "CurrentSongAsStatus", fallback=False
             )
+            ignored_paths = conf.get("IgnoredPaths", fallback="").split(",")
+            self.ignored_paths = ignored_paths if ignored_paths[0] != "" else []
+
             pillow_installed = conf.getboolean("DominantColorEmbed", pillow_installed)
             eyed3_installed = conf.getboolean("Id3Metadata", eyed3_installed)
         else:
@@ -377,16 +380,22 @@ class Music(commands.Cog):
     def get_files(self):
         self.songs = []
         self.log.info(f"Searching for songs from {self.root_path}.")
+        ignored: int = 0
         for root, _, files in os.walk(self.root_path):
             for name in files:
                 if name.endswith(".mp3"):
-                    try:
-                        self.songs.append(Song(os.path.join(root, name), self.log))
-                    except IOError:
-                        # expected if file not found
-                        pass
+                    for query in self.ignored_paths:
+                        if query in root:
+                            ignored += 1
+                            break
+                    else:
+                        try:
+                            self.songs.append(Song(os.path.join(root, name), self.log))
+                        except IOError:
+                            # expected if file not found
+                            pass
 
-        self.log.info(f"Found {len(self.songs)} songs.")
+        self.log.info(f"Found {len(self.songs)} songs, ignored {ignored}.")
 
     async def get_voice_state(self, ctx):
         await self.voice_state.connect(ctx)
