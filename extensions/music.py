@@ -18,8 +18,8 @@ from async_timeout import timeout
 MANUAL_LYRIC_OFFSET = 0
 ITEMS_PER_PAGE = 10
 MAX_LINES = 5
-DEBUG_GUILDS = [812784271294726156]
 SLUGIFY_PATTERN = re.compile(rf"\s|\d|[{re.escape(string.punctuation)}]")
+DEBUG_GUILDS = [779069894767542274, 642159962587529237]
 
 
 try:
@@ -116,7 +116,7 @@ class Song:
                     x * int(t)
                     for x, t in zip([0.001, 1, 60], reversed(re.split(":|\.", ts)))
                 )
-                lyric = s[ts_end_index + 1 :]
+                lyric = s[ts_end_index + 1:]
                 if not lyric.isspace() and lyric != "":
                     self.lyrics.append(lyric)
                     self.lyric_timestamps.append(ts_seconds)
@@ -272,7 +272,8 @@ class MusicPanel(discord.ui.View):
     def __init__(self, bot: commands.Bot, title, voice_state: VoiceState):
         super().__init__()
         self.users_to_ping = list(
-            map(int, bot.config.config["napbot"].get("AdminIds", "").split(","))
+            map(int, bot.config.config["napbot"].get(
+                "AdminIds", "").split(","))
         )
         self.title = title
         self.bot = bot
@@ -344,12 +345,14 @@ class LyricPlayer:
                 msg = await self.ctx.channel.send(
                     embed=embed,
                     file=file,
-                    view=MusicPanel(self.bot, self.source.get_name(), self.voice_state),
+                    view=MusicPanel(
+                        self.bot, self.source.get_name(), self.voice_state),
                 )
         else:
             msg = await self.ctx.channel.send(
                 embed=embed,
-                view=MusicPanel(self.bot, self.source.get_name(), self.voice_state),
+                view=MusicPanel(
+                    self.bot, self.source.get_name(), self.voice_state),
             )
 
         if self.show_lyrics:
@@ -370,7 +373,7 @@ class LyricPlayer:
                         self.source.lyrics[lines_before:i]
                         + [f"**{self.source.lyrics[i]}**"]
                         + (
-                            self.source.lyrics[i + 1 : lines_after]
+                            self.source.lyrics[i + 1: lines_after]
                             if i + 1 < len(self.source.lyrics)
                             else []
                         )
@@ -407,9 +410,11 @@ class Music(commands.Cog):
                 "CurrentSongAsStatus", fallback=False
             )
             ignored_paths = conf.get("IgnoredPaths", fallback="").split(",")
-            self.ignored_paths = ignored_paths if ignored_paths[0] != "" else []
+            self.ignored_paths = ignored_paths if ignored_paths[0] != "" else [
+            ]
 
-            pillow_installed = conf.getboolean("DominantColorEmbed", pillow_installed)
+            pillow_installed = conf.getboolean(
+                "DominantColorEmbed", pillow_installed)
             eyed3_installed = conf.getboolean("Id3Metadata", eyed3_installed)
         else:
             self.root_path = "/media/Moosic"
@@ -431,7 +436,8 @@ class Music(commands.Cog):
                             break
                     else:
                         try:
-                            self.songs.append(Song(os.path.join(root, name), self.log))
+                            self.songs.append(
+                                Song(os.path.join(root, name), self.log))
                         except IOError:
                             # expected if file not found
                             pass
@@ -704,8 +710,9 @@ class Music(commands.Cog):
         if len(sources) < offset:
             return await ctx.send(f"Page not found for query '{query}'.")
 
-        embed = discord.Embed(title=f"Moosic containing '{query}'", description="")
-        for i, n in enumerate(sources[offset : offset + ITEMS_PER_PAGE]):
+        embed = discord.Embed(
+            title=f"Moosic containing '{query}'", description="")
+        for i, n in enumerate(sources[offset: offset + ITEMS_PER_PAGE]):
             embed.description += (
                 f"{offset+i+1}. {n.get_name()}{' [LRC]' if n.lyrics else ''}\n"
             )
@@ -754,7 +761,7 @@ class Music(commands.Cog):
             return await ctx.send("Nothing in the queue on this page.")
         offset = page * ITEMS_PER_PAGE
         embed = discord.Embed(title="Queue", description="")
-        for i, s in enumerate(self.voice_state.queue[offset : offset + ITEMS_PER_PAGE]):
+        for i, s in enumerate(self.voice_state.queue[offset: offset + ITEMS_PER_PAGE]):
             embed.description += (
                 f"{offset+i+1}. {s[0].get_name()}{' [LRC]' if s[0].lyrics else ''}\n"
             )
