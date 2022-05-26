@@ -207,7 +207,7 @@ class VoiceState:
                 self.vc, self.ctx, self.current[0], self, self.bot, self.current[1]
             )
             self.loop.create_task(lyric_client.start())
-            self.vc.play(discord.FFmpegPCMAudio(source=self.current[0].path))
+            self.vc.play(discord.FFmpegOpusAudio(source=self.current[0].path))
             await self.bot.change_presence(
                 activity=discord.Activity(
                     type=discord.ActivityType.listening, name=self.current[0].get_name()
