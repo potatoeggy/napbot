@@ -496,8 +496,8 @@ class Music(commands.Cog):
 
         current_title = self.voice_state.current[0].title_slugified
         if re.sub(SLUGIFY_PATTERN, "", content.lower()) == current_title:
-            await msg.reply(f":white_check_mark: Correct, {msg.author}!")
             await self.voice_state.skip()
+            await msg.reply(f":white_check_mark: Correct, {msg.author}!")
 
     @cog_ext.cog_slash(
         name="play",
