@@ -47,10 +47,10 @@ def title_slugify(string: str) -> str:
     """
     par_index = string.find("(")
 
-    new_index = par_index if par_index == -1 else None
+    new_index = par_index if par_index != -1 else None
     title_before_brackets = string[:new_index]
     title_slugified = re.sub(SLUGIFY_PATTERN, "", title_before_brackets)
-    return title_slugified
+    return title_slugified.lower()
 
 
 class Song:
@@ -183,7 +183,7 @@ class VoiceState:
         self.player.cancel()
 
     def __bool__(self):
-        return self.vc
+        return bool(self.vc)
 
     async def skip(self, num: int = 1):
         num -= 1
@@ -250,7 +250,7 @@ class VoiceState:
             await self.bot.change_presence(activity=None)
             if self.guess_mode:
                 await self.ctx.send(
-                    f"That was {self.current[0].get_name()} ({self.current[0].title_slugified})!"
+                    f"That was **{self.current[0].get_name()}** ({self.current[0].title_slugified})!"
                 )
             self.current = None
 
@@ -465,9 +465,9 @@ class Music(commands.Cog):
                 required=False,
             ),
         ],
-        guild_ids=[DEBUG_GUILDS],
+        guild_ids=DEBUG_GUILDS,
     )
-    @commands.command
+    @commands.command()
     async def guess(self, ctx, show_artist: bool = False, pattern: str = ""):
         if self.voice_state:  # if connected
             return await ctx.send(
@@ -475,7 +475,9 @@ class Music(commands.Cog):
             )
 
         self.voice_state.guess_mode = True
-        await self._play(ctx, pattern, 0, play_random=True, show_lyrics=False)
+        self.voice_state.guess_show_artist = show_artist
+        await self._play(ctx, pattern, 0, play_random=False, show_lyrics=False)
+        await ctx.send("Guess mode activated! Type your guess of the song!")
 
     @commands.Cog.listener()
     async def on_message(self, msg):
@@ -489,8 +491,9 @@ class Music(commands.Cog):
             return
 
         current_title = self.voice_state.current[0].title_slugified
-        if re.sub(SLUGIFY_PATTERN, "", content) == current_title:
+        if re.sub(SLUGIFY_PATTERN, "", content.lower()) == current_title:
             await msg.reply(f":white_check_mark: Correct, {msg.author}!")
+            await self.voice_state.skip()
 
     @cog_ext.cog_slash(
         name="play",
@@ -533,7 +536,7 @@ class Music(commands.Cog):
     ) -> list:
         if self.voice_state and self.voice_state.guess_mode:
             return await ctx.send(
-                "Cannot add songs while Guess Mode is on."
+                "Cannot add songs while Guess Mode is on. "
                 "Restore normal function by running /stop then /play."
             )
 
@@ -739,6 +742,9 @@ class Music(commands.Cog):
         guild_ids=DEBUG_GUILDS,
     )
     async def show_queue(self, ctx, page: int = 1):
+        if self.voice_state and self.voice_state.guess_mode:
+            return await ctx.send("Queue disabled in guess mode!")
+
         page -= 1
         if len(self.voice_state.queue) < 1:
             return await ctx.send("Nothing in the queue on this page.")
