@@ -231,8 +231,6 @@ class VoiceState:
                 )
 
                 self.loop.create_task(lyric_client.start())
-            elif self.guess_show_artist:
-                await self.ctx.send(f"New song by **{self.current[0].artist}!**")
 
             self.vc.play(discord.FFmpegOpusAudio(source=self.current[0].path))
 
@@ -243,6 +241,12 @@ class VoiceState:
                         name=self.current[0].get_name(),
                     )
                 )
+
+            if self.guess_show_artist and self.guess_mode:
+                pass
+                # below two lines hang the program idk why
+                # await self.ctx.send("hello!")
+                # await self.ctx.send(f"New song by **{self.current[0].artist}!**")
 
             # launch monitor for guesses here
             while self.vc and self.vc.is_playing() and self.vc.is_connected():
