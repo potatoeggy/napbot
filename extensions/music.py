@@ -1,3 +1,4 @@
+import string
 import traceback
 import io
 import time
@@ -18,6 +19,7 @@ MANUAL_LYRIC_OFFSET = 0
 ITEMS_PER_PAGE = 10
 MAX_LINES = 5
 DEBUG_GUILDS = [812784271294726156]
+SLUGIFY_PATTERN = re.compile(rf"\s|\d[{re.escape(string.punctuation)}]")
 
 
 try:
@@ -37,6 +39,18 @@ except ImportError:
         " WARN: eyed3 is not installed, disabling metadata"
     )  # haha where logging module
     eyed3_installed = False
+
+
+def title_slugify(string: str) -> str:
+    """
+    Take the important part of a song title
+    """
+    par_index = string.find("(")
+
+    new_index = par_index if par_index == -1 else None
+    title_before_brackets = string[:new_index]
+    title_slugified = re.sub(SLUGIFY_PATTERN, "", title_before_brackets)
+    return title_slugified
 
 
 class Song:
@@ -113,6 +127,10 @@ class Song:
                 # current line does not have a timestamp
                 pass
 
+        self.title_slugified = (
+            title_slugify(self.title) if self.title else self.base_name
+        )
+
     def get_name(self):
         if not (self.title and self.artist):
             return self.base_name
@@ -148,7 +166,7 @@ class SongQueue(asyncio.Queue):
 
 
 class VoiceState:
-    def __init__(self, bot: commands.Bot):
+    def __init__(self, bot: commands.Bot, guess_mode=False):
         self.bot = bot
         self.queue = SongQueue()
         self.current = None
@@ -157,6 +175,9 @@ class VoiceState:
         self.player = bot.loop.create_task(self.audio_player())
         self.vc = None
         self.audio_running = False
+
+        self.guess_mode = guess_mode
+        self.guess_show_artist = False
 
     def __del__(self):
         self.player.cancel()
@@ -203,23 +224,39 @@ class VoiceState:
                 self.bot.loop.create_task(self.stop())
                 self.audio_running = False
                 return
-            lyric_client = LyricPlayer(
-                self.vc, self.ctx, self.current[0], self, self.bot, self.current[1]
-            )
-            self.loop.create_task(lyric_client.start())
-            self.vc.play(discord.FFmpegOpusAudio(source=self.current[0].path))
-            await self.bot.change_presence(
-                activity=discord.Activity(
-                    type=discord.ActivityType.listening, name=self.current[0].get_name()
+
+            if not self.guess_mode:
+                lyric_client = LyricPlayer(
+                    self.vc, self.ctx, self.current[0], self, self.bot, self.current[1]
                 )
-            )
+
+                self.loop.create_task(lyric_client.start())
+            elif self.guess_show_artist:
+                await self.ctx.send(f"New song by **{self.current[0].artist}!**")
+
+            self.vc.play(discord.FFmpegOpusAudio(source=self.current[0].path))
+
+            if not self.guess_mode:
+                await self.bot.change_presence(
+                    activity=discord.Activity(
+                        type=discord.ActivityType.listening,
+                        name=self.current[0].get_name(),
+                    )
+                )
+
+            # launch monitor for guesses here
             while self.vc and self.vc.is_playing() and self.vc.is_connected():
                 await asyncio.sleep(1)
             await self.bot.change_presence(activity=None)
+            if self.guess_mode:
+                await self.ctx.send(
+                    f"That was {self.current[0].get_name()} ({self.current[0].title_slugified})!"
+                )
             self.current = None
 
     async def stop(self):
         self.queue.clear()
+        self.guess_mode = False
         await self.bot.change_presence(activity=None)
         if self.vc:
             self.vc.stop()
@@ -355,6 +392,8 @@ class Music(commands.Cog):
         self.log = bot.log
         self.voice_state = VoiceState(self.bot)
 
+        self.guess_mode = False
+
         # read configuration
         self.log.debug("Reading music configuration")
         if "music" in bot.config.config:
@@ -410,6 +449,50 @@ class Music(commands.Cog):
         return sources
 
     @cog_ext.cog_slash(
+        name="guess",
+        description="Turn on guess mode",
+        options=[
+            manage_commands.create_option(
+                name="show_artist",
+                description="Show the artist of the song as a hint",
+                option_type=5,
+                required=False,
+            ),
+            manage_commands.create_option(
+                name="pattern",
+                description="Only play songs that match this pattern",
+                option_type=3,
+                required=False,
+            ),
+        ],
+        guild_ids=[DEBUG_GUILDS],
+    )
+    @commands.command
+    async def guess(self, ctx, show_artist: bool = False, pattern: str = ""):
+        if self.voice_state:  # if connected
+            return await ctx.send(
+                "Napbot must not be in a voice channel to turn on Guess Mode."
+            )
+
+        self.voice_state.guess_mode = True
+        await self._play(ctx, pattern, 0, play_random=True, show_lyrics=False)
+
+    @commands.Cog.listener()
+    async def on_message(self, msg):
+        content = msg.content
+
+        if msg.author.bot or not (
+            self.voice_state
+            and self.voice_state.guess_mode
+            and self.voice_state.audio_running
+        ):
+            return
+
+        current_title = self.voice_state.current[0].title_slugified
+        if re.sub(SLUGIFY_PATTERN, "", content) == current_title:
+            await msg.reply(f":white_check_mark: Correct, {msg.author}!")
+
+    @cog_ext.cog_slash(
         name="play",
         description="Play a moosic",
         options=[
@@ -448,6 +531,12 @@ class Music(commands.Cog):
         show_lyrics: bool = True,
         return_to_function: bool = False,
     ) -> list:
+        if self.voice_state and self.voice_state.guess_mode:
+            return await ctx.send(
+                "Cannot add songs while Guess Mode is on."
+                "Restore normal function by running /stop then /play."
+            )
+
         # treat numbers <= 0 as play all
         play_all = number <= 0
         if query and not play_random:
@@ -625,6 +714,7 @@ class Music(commands.Cog):
         guild_ids=DEBUG_GUILDS,
     )
     async def stop(self, ctx):
+        self.voice_state.guess_mode = False
         await self.voice_state.stop()
         await ctx.send("Goodbye!")
 
