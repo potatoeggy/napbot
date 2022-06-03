@@ -19,7 +19,7 @@ MANUAL_LYRIC_OFFSET = 0
 ITEMS_PER_PAGE = 10
 MAX_LINES = 5
 DEBUG_GUILDS = [812784271294726156]
-SLUGIFY_PATTERN = re.compile(rf"\s|\d[{re.escape(string.punctuation)}]")
+SLUGIFY_PATTERN = re.compile(rf"\s|\d|[{re.escape(string.punctuation)}]")
 
 
 try:
