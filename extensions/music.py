@@ -11,7 +11,6 @@ import re
 import os
 
 import discord
-from discord_slash import cog_ext, manage_commands
 from discord.ext import commands
 from async_timeout import timeout
 
@@ -452,25 +451,6 @@ class Music(commands.Cog):
                 sources.append(song)
         return sources
 
-    @cog_ext.cog_slash(
-        name="guess",
-        description="Turn on guess mode",
-        options=[
-            manage_commands.create_option(
-                name="show_artist",
-                description="Show the artist of the song as a hint",
-                option_type=5,
-                required=False,
-            ),
-            manage_commands.create_option(
-                name="pattern",
-                description="Only play songs that match this pattern",
-                option_type=3,
-                required=False,
-            ),
-        ],
-        guild_ids=DEBUG_GUILDS,
-    )
     @commands.command()
     async def guess(self, ctx, show_artist: bool = False, pattern: str = ""):
         if self.voice_state:  # if connected
@@ -490,35 +470,18 @@ class Music(commands.Cog):
         if msg.author.bot or not (
             self.voice_state
             and self.voice_state.guess_mode
-            and self.voice_state.audio_running
         ):
             return
 
         current_title = self.voice_state.current[0].title_slugified
+        print(content, msg.clean_content)
         if re.sub(SLUGIFY_PATTERN, "", content.lower()) == current_title:
+            print("check ye")
             await self.voice_state.skip()
             await msg.reply(f":white_check_mark: Correct, {msg.author}!")
 
-    @cog_ext.cog_slash(
-        name="play",
-        description="Play a moosic",
-        options=[
-            manage_commands.create_option(
-                name="query",
-                description="Tags to search for",
-                option_type=3,
-                required=False,
-            ),
-            manage_commands.create_option(
-                name="number",
-                description="Song number from search, or 0 for all songs that match search",
-                option_type=4,
-                required=False,
-            ),
-        ],
-        guild_ids=DEBUG_GUILDS,
-    )
-    @commands.command()
+
+    @commands.command(name="play")
     async def play(
         self,
         ctx,
@@ -583,25 +546,6 @@ class Music(commands.Cog):
         else:
             await ctx.send(f"Added **{sources[0].get_name()}** to the queue.")
 
-    @cog_ext.cog_slash(
-        name="playnow",
-        description="Play a moosic now",
-        options=[
-            manage_commands.create_option(
-                name="query",
-                description="Tags to search for",
-                option_type=3,
-                required=False,
-            ),
-            manage_commands.create_option(
-                name="number",
-                description="Song number from search, or 0 for all songs that match search",
-                option_type=4,
-                required=False,
-            ),
-        ],
-        guild_ids=DEBUG_GUILDS,
-    )
     @commands.command(name="playnow")
     async def play_now(
         self,
@@ -624,25 +568,7 @@ class Music(commands.Cog):
             await ctx.send(f"Playing **{sources[0].get_name()}**.")
         await self.voice_state.skip()
 
-    @cog_ext.cog_slash(
-        name="playnext",
-        description="Play a moosic right after",
-        options=[
-            manage_commands.create_option(
-                name="query",
-                description="Tags to search for",
-                option_type=3,
-                required=False,
-            ),
-            manage_commands.create_option(
-                name="number",
-                description="Song number from search, or 0 for all songs that match search",
-                option_type=4,
-                required=False,
-            ),
-        ],
-        guild_ids=DEBUG_GUILDS,
-    )
+    @commands.command(name="playnext")
     async def play_next(
         self,
         ctx,
@@ -661,42 +587,12 @@ class Music(commands.Cog):
         else:
             await ctx.send(f"Added **{sources[0].get_name()}** to the queue.")
 
-    @cog_ext.cog_slash(
-        name="skip",
-        description="Skip a number of tracks (default 1)",
-        options=[
-            manage_commands.create_option(
-                name="number",
-                description="The number of tracks to skip / the track number to skip to",
-                option_type=4,
-                required=False,
-            )
-        ],
-        guild_ids=DEBUG_GUILDS,
-    )
+    @commands.command(name="skip")
     async def skip(self, ctx, number: int = 1):
         await self.voice_state.skip(number)
         await ctx.send("Skipped track.")
 
-    @cog_ext.cog_slash(
-        name="search",
-        description="Searches local files for music",
-        options=[
-            manage_commands.create_option(
-                name="query",
-                description="Query to search for in tags",
-                option_type=3,
-                required=True,
-            ),
-            manage_commands.create_option(
-                name="page",
-                description="Page number to show",
-                option_type=4,
-                required=False,
-            ),
-        ],
-        guild_ids=DEBUG_GUILDS,
-    )
+    @commands.command(name="search")
     async def search(self, ctx, query, page: int = 1):
         page -= 1
         sources = self.find_songs(query)
@@ -714,37 +610,18 @@ class Music(commands.Cog):
         )
         await ctx.send(embed=embed)
 
-    @cog_ext.cog_slash(
-        name="stop",
-        description="Stop playback and disconnect",
-        options=[],
-        guild_ids=DEBUG_GUILDS,
-    )
+    @commands.command(name="stop")
     async def stop(self, ctx):
         self.voice_state.guess_mode = False
         await self.voice_state.stop()
         await ctx.send("Goodbye!")
 
-    @cog_ext.cog_slash(
-        name="clear", description="Clear the queue", options=[], guild_ids=DEBUG_GUILDS
-    )
+    @commands.command(name="clear")
     async def clear_queue(self, ctx):
         self.voice_state.queue.clear()
         await ctx.send("Cleared the queue!")
 
-    @cog_ext.cog_slash(
-        name="queue",
-        description="Show the queue",
-        options=[
-            manage_commands.create_option(
-                name="page",
-                description="The page number to view",
-                option_type=4,
-                required=False,
-            )
-        ],
-        guild_ids=DEBUG_GUILDS,
-    )
+    @commands.command(name="queue")
     async def show_queue(self, ctx, page: int = 1):
         if self.voice_state and self.voice_state.guess_mode:
             return await ctx.send("Queue disabled in guess mode!")
@@ -762,5 +639,5 @@ class Music(commands.Cog):
         await ctx.send(embed=embed)
 
 
-def setup(bot: commands.Bot):
-    bot.add_cog(Music(bot))
+async def setup(bot: commands.Bot):
+    await bot.add_cog(Music(bot))
