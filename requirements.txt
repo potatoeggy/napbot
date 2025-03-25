@@ -1,2 +1,2 @@
-discord.py[voice]==2.4.0
+discord.py[voice]==2.5.1
 eyed3==0.9.7
