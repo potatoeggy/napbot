@@ -117,7 +117,7 @@ class Song:
                 ts = s[1:ts_end_index]
                 ts_seconds = sum(
                     x * int(t)
-                    for x, t in zip([0.001, 1, 60], reversed(re.split(":|\.", ts)))
+                    for x, t in zip([0.001, 1, 60], reversed(re.split(r":|\.", ts)))
                 )
                 lyric = s[ts_end_index + 1 :]
                 if not lyric.isspace() and lyric != "":
