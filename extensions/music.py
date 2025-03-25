@@ -186,6 +186,7 @@ class VoiceState:
         self.guess_mode = guess_mode
         self.guess_show_artist = False
         self.guess_vote_skip_percent = guess_vote_skip_percent
+        self.start_from_random_pos = False
 
     def __del__(self):
         self.player.cancel()
@@ -233,12 +234,33 @@ class VoiceState:
                 self.audio_running = False
                 return
 
+            song, show_lyrics = self.current
+            start_time = 0
+            if self.start_from_random_pos:
+                # this only works if there are lyrics
+                # start the time from anywhere
+                first_third_timestamps = [
+                    0,
+                    *song.lyric_timestamps[: len(song.lyric_timestamps) // 3],
+                ]
+                start_time = random.choice(first_third_timestamps)
+
+            start_time_ms = int(
+                (start_time % 1) * 1000
+            )  # Convert fractional seconds to milliseconds
+            start_time_s = int(start_time % 60)
+            start_time_m = int((start_time // 60) % 60)
+            start_time_h = int(start_time // 3600)
+            start_ts = f"{start_time_h:02}:{start_time_m:02}:{start_time_s:02}.{start_time_ms:03}"
+
             self.vc.play(
-                discord.FFmpegOpusAudio(source=self.current[0].path, bitrate=96)
+                discord.FFmpegOpusAudio(
+                    source=song.path, bitrate=96, before_options=f"-ss {start_ts}"
+                )
             )
             if not self.guess_mode:
                 lyric_client = LyricPlayer(
-                    self.vc, self.ctx, self.current[0], self, self.bot, self.current[1]
+                    self.vc, self.ctx, song, self, self.bot, show_lyrics
                 )
 
                 self.loop.create_task(lyric_client.start())
@@ -247,17 +269,17 @@ class VoiceState:
                 await self.bot.change_presence(
                     activity=discord.Activity(
                         type=discord.ActivityType.listening,
-                        name=self.current[0].get_name(),
+                        name=song.get_name(),
                     )
                 )
 
             if self.guess_mode:
                 if self.guess_show_artist:
                     await self.ctx.send(
-                        f"New song by **{self.current[0].artist}!**",
+                        f"New song by **{song.artist}!**",
                         view=MusicPanel(
                             self.bot,
-                            self.current[0].get_name(),
+                            song.get_name(),
                             self,
                             guess_vote_skip_percent=self.guess_vote_skip_percent,
                         ),
@@ -267,7 +289,7 @@ class VoiceState:
                         "",
                         view=MusicPanel(
                             self.bot,
-                            self.current[0].get_name(),
+                            song.get_name(),
                             self,
                             guess_vote_skip_percent=self.guess_vote_skip_percent,
                         ),
@@ -279,7 +301,7 @@ class VoiceState:
             await self.bot.change_presence(activity=None)
             if self.guess_mode:
                 await self.ctx.send(
-                    f"That was **{self.current[0].get_name()}** ({self.current[0].title_slugified})!"
+                    f"That was **{song.get_name()}** ({song.title_slugified})!"
                 )
             self.current = None
 
@@ -345,7 +367,6 @@ class MusicPanel(discord.ui.View):
                 button.label = f"{len(self.guess_vote_skips)}/{num_members}"
                 return await interaction.response.edit_message(view=self)
             else:
-                print("self.guess is None")
                 await self.voice_state.skip()
         button.disabled = True
         button.style = discord.ButtonStyle.grey
@@ -532,7 +553,13 @@ class Music(commands.Cog):
         return sources
 
     @commands.command()
-    async def guess(self, ctx, show_artist: bool = False, pattern: str = ""):
+    async def guess(
+        self,
+        ctx,
+        show_artist: bool = False,
+        start_from_random_pos: bool = False,
+        pattern: str = "",
+    ):
         if self.voice_state:  # if connected
             return await ctx.send(
                 "Napbot must not be in a voice channel to turn on Guess Mode."
@@ -540,6 +567,8 @@ class Music(commands.Cog):
 
         self.voice_state.guess_mode = True
         self.voice_state.guess_show_artist = show_artist
+        self.voice_state.start_from_random_pos = start_from_random_pos
+
         await self._play(ctx, pattern, 0, play_random=False, show_lyrics=False)
         await ctx.send("Guess mode activated! Type your guess of the song!")
 
@@ -617,7 +646,6 @@ class Music(commands.Cog):
 
         for s in sources:
             await self.voice_state.add(s, lyrics=show_lyrics)
-
         if len(sources) > 1:
             await ctx.send(f"Added {len(sources)} songs to the queue.")
         else:
