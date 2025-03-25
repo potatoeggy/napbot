@@ -246,11 +246,16 @@ class VoiceState:
                     )
                 )
 
-            if self.guess_show_artist and self.guess_mode:
-                pass
-                # below two lines hang the program idk why
-                # await self.ctx.send("hello!")
-                await self.ctx.send(f"New song by **{self.current[0].artist}!**")
+            if self.guess_mode:
+                if self.guess_show_artist:
+                    await self.ctx.send(
+                        f"New song by **{self.current[0].artist}!**",
+                        view=MusicPanel(self.bot, self.current[0].get_name(), self),
+                    )
+                else:
+                    await self.ctx.send(
+                        "", view=MusicPanel(self.bot, self.current[0].get_name(), self)
+                    )
 
             # launch monitor for guesses here
             while self.vc and self.vc.is_playing() and self.vc.is_connected():
@@ -282,11 +287,20 @@ class MusicPanel(discord.ui.View):
         self.bot = bot
         self.voice_state = voice_state
 
+    async def on_timeout(self) -> None:
+        for item in self.children:
+            item.disabled = True
+        await self.message.edit(view=self)
+
     @discord.ui.button(emoji="⏭️", style=discord.ButtonStyle.primary)
     async def skip_track(
         self, button: discord.ui.Button, interaction: discord.Interaction
     ):
-        await self.voice_state.skip()
+        if (
+            self.voice_state.current
+            and self.title == self.voice_state.current[0].get_name()
+        ):
+            await self.voice_state.skip()
         button.disabled = True
         button.style = discord.ButtonStyle.grey
         button.emoji = "✅"
@@ -381,6 +395,9 @@ class LyricPlayer:
                     ),
                 )
                 while now < t + start:
+                    if not self.voice_state.current:
+                        return  # usually because we skipped
+
                     if (
                         not self.voice_state.current[0].get_name()
                         == self.source.get_name()
