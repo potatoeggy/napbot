@@ -1,15 +1,15 @@
 #!/usr/bin/oython
-import iohandler
+from state import log, config
 from discord.ext import commands
 import discord
 import traceback
 import asyncio
 
-log = iohandler.Logger()
-config = iohandler.Config(log)
+
 log.set_log_level(config.log_level)
 
 bot = commands.Bot(command_prefix=",", intents=discord.Intents.all())
+
 
 async def main():
     async with bot:
@@ -27,7 +27,9 @@ async def main():
             except commands.NoEntryPointError:
                 log.warn(f"Extension {m} is missing a global setup function, skipping.")
             except commands.ExtensionFailed:
-                log.warn(f"Extension {m} failed somewhere in its setup process, skipping.")
+                log.warn(
+                    f"Extension {m} failed somewhere in its setup process, skipping."
+                )
                 log.error(traceback.format_exc())
         log.info(f"Loaded {len(bot.cogs)} module(s).")
 
@@ -44,6 +46,7 @@ async def main():
                 await ctx.send("You are not an administrator.")
 
         await bot.start(config.bot_token)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

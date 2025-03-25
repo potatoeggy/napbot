@@ -10,6 +10,8 @@ import contextlib
 import re
 import os
 
+from state import config
+
 import discord
 from discord.ext import commands
 from async_timeout import timeout
@@ -17,7 +19,7 @@ from async_timeout import timeout
 MANUAL_LYRIC_OFFSET = 0
 ITEMS_PER_PAGE = 10
 MAX_LINES = 5
-DEBUG_GUILDS = [812784271294726156]
+DEBUG_GUILDS = config.debug_guilds
 SLUGIFY_PATTERN = re.compile(rf"\s|\d|[{re.escape(string.punctuation)}]")
 
 
@@ -48,7 +50,9 @@ def title_slugify(string: str) -> str:
 
     new_index = par_index if par_index != -1 else None
     title_before_brackets = string[:new_index]
-    title_slugified = re.sub(SLUGIFY_PATTERN, "", title_before_brackets)
+    title_slugified = re.sub(
+        SLUGIFY_PATTERN, "", title_before_brackets.replace("&", "and")
+    )
     return title_slugified.lower()
 
 
@@ -224,7 +228,9 @@ class VoiceState:
                 self.audio_running = False
                 return
 
-            self.vc.play(discord.FFmpegOpusAudio(source=self.current[0].path, bitrate=96))
+            self.vc.play(
+                discord.FFmpegOpusAudio(source=self.current[0].path, bitrate=96)
+            )
             if not self.guess_mode:
                 lyric_client = LyricPlayer(
                     self.vc, self.ctx, self.current[0], self, self.bot, self.current[1]
@@ -466,19 +472,16 @@ class Music(commands.Cog):
     async def on_message(self, msg):
         content = msg.content
 
-        if msg.author.bot or not (
-            self.voice_state
-            and self.voice_state.guess_mode
-        ):
+        if msg.author.bot or not (self.voice_state and self.voice_state.guess_mode):
             return
 
         current_title = self.voice_state.current[0].title_slugified
-        print(content, msg.clean_content)
-        if re.sub(SLUGIFY_PATTERN, "", content.lower()) == current_title:
-            print("check ye")
+        if (
+            re.sub(SLUGIFY_PATTERN, "", content.lower().replace("&", "and"))
+            == current_title
+        ):
             await self.voice_state.skip()
             await msg.reply(f":white_check_mark: Correct, {msg.author}!")
-
 
     @commands.command(name="play")
     async def play(
