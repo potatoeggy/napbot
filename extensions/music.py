@@ -236,7 +236,7 @@ class VoiceState:
 
             song, show_lyrics = self.current
             start_time = 0
-            if self.start_from_random_pos:
+            if self.start_from_random_pos and self.guess_mode:
                 # this only works if there are lyrics
                 # start the time from anywhere
                 first_third_timestamps = [
