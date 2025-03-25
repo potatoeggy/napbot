@@ -77,7 +77,9 @@ class Song:
                     with contextlib.redirect_stdout(null):
                         mp3: eyed3.mp3.Mp3AudioFile = eyed3.load(audio_path)
             if mp3 is not None and mp3.tag is not None:
-                self.artist = mp3.tag.artist
+                self.artist = (
+                    mp3.tag.artist.replace("\x00", ", ") if mp3.tag.artist else None
+                )
                 self.title = mp3.tag.title
                 self.album = mp3.tag.album
                 self.track_num = mp3.tag.track_num
@@ -169,7 +171,9 @@ class SongQueue(asyncio.Queue):
 
 
 class VoiceState:
-    def __init__(self, bot: commands.Bot, guess_mode=False):
+    def __init__(
+        self, bot: commands.Bot, guess_mode=False, guess_vote_skip_percent: float = 0.0
+    ):
         self.bot = bot
         self.queue = SongQueue()
         self.current = None
@@ -181,6 +185,7 @@ class VoiceState:
 
         self.guess_mode = guess_mode
         self.guess_show_artist = False
+        self.guess_vote_skip_percent = guess_vote_skip_percent
 
     def __del__(self):
         self.player.cancel()
@@ -250,11 +255,22 @@ class VoiceState:
                 if self.guess_show_artist:
                     await self.ctx.send(
                         f"New song by **{self.current[0].artist}!**",
-                        view=MusicPanel(self.bot, self.current[0].get_name(), self),
+                        view=MusicPanel(
+                            self.bot,
+                            self.current[0].get_name(),
+                            self,
+                            guess_vote_skip_percent=self.guess_vote_skip_percent,
+                        ),
                     )
                 else:
                     await self.ctx.send(
-                        "", view=MusicPanel(self.bot, self.current[0].get_name(), self)
+                        "",
+                        view=MusicPanel(
+                            self.bot,
+                            self.current[0].get_name(),
+                            self,
+                            guess_vote_skip_percent=self.guess_vote_skip_percent,
+                        ),
                     )
 
             # launch monitor for guesses here
@@ -278,7 +294,14 @@ class VoiceState:
 
 
 class MusicPanel(discord.ui.View):
-    def __init__(self, bot: commands.Bot, title, voice_state: VoiceState):
+    def __init__(
+        self,
+        bot: commands.Bot,
+        title,
+        voice_state: VoiceState,
+        *,
+        guess_vote_skip_percent: float | None = None,
+    ):
         super().__init__()
         self.users_to_ping = list(
             map(int, bot.config.config["napbot"].get("AdminIds", "").split(","))
@@ -286,21 +309,44 @@ class MusicPanel(discord.ui.View):
         self.title = title
         self.bot = bot
         self.voice_state = voice_state
-
-    async def on_timeout(self) -> None:
-        for item in self.children:
-            item.disabled = True
-        await self.message.edit(view=self)
+        self.guess_vote_skip_percent = guess_vote_skip_percent
+        self.guess_vote_skips = set[int]()
 
     @discord.ui.button(emoji="⏭️", style=discord.ButtonStyle.primary)
     async def skip_track(
-        self, button: discord.ui.Button, interaction: discord.Interaction
+        self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         if (
             self.voice_state.current
             and self.title == self.voice_state.current[0].get_name()
         ):
-            await self.voice_state.skip()
+            if self.guess_vote_skip_percent is not None:
+                members = self.voice_state.vc.channel.members
+                num_members = len(members) - 1  # not itself
+
+                if (
+                    len(self.guess_vote_skips)
+                    >= num_members * self.guess_vote_skip_percent
+                ):
+                    await self.voice_state.skip()
+                elif interaction.user.id not in self.guess_vote_skips and any(
+                    u.id == interaction.user.id for u in members
+                ):
+                    # if the user is in the voice channel and is not already in the list
+                    self.guess_vote_skips.add(interaction.user.id)
+                    if (
+                        len(self.guess_vote_skips)
+                        >= num_members * self.guess_vote_skip_percent
+                    ):
+                        await self.voice_state.skip()
+                        button.disabled = True
+                        button.style = discord.ButtonStyle.grey
+                        button.emoji = "✅"
+                button.label = f"{len(self.guess_vote_skips)}/{num_members}"
+                return await interaction.response.edit_message(view=self)
+            else:
+                print("self.guess is None")
+                await self.voice_state.skip()
         button.disabled = True
         button.style = discord.ButtonStyle.grey
         button.emoji = "✅"
@@ -308,7 +354,7 @@ class MusicPanel(discord.ui.View):
 
     @discord.ui.button(label="Request lyric fix", style=discord.ButtonStyle.green)
     async def ping_admin(
-        self, button: discord.ui.Button, interaction: discord.Interaction
+        self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         for admin in self.users_to_ping:
             try:
@@ -415,7 +461,6 @@ class Music(commands.Cog):
 
         self.bot = bot
         self.log = bot.log
-        self.voice_state = VoiceState(self.bot)
 
         self.guess_mode = False
 
@@ -432,10 +477,17 @@ class Music(commands.Cog):
 
             pillow_installed = conf.getboolean("DominantColorEmbed", pillow_installed)
             eyed3_installed = conf.getboolean("Id3Metadata", eyed3_installed)
+            self.guess_vote_skip_percent = (
+                conf.getfloat("GuessVoteSkipPercent", 0.0) / 100
+            )
         else:
             self.root_path = "/media/Moosic"
             self.show_song_status = False
+            self.guess_vote_skip_percent = None
 
+        self.voice_state = VoiceState(
+            self.bot, guess_vote_skip_percent=self.guess_vote_skip_percent
+        )
         # process all songs
         self.get_files()
 
@@ -463,14 +515,20 @@ class Music(commands.Cog):
         await self.voice_state.connect(ctx)
 
     def find_songs(self, query) -> list:
-        args = query.lower().split()
+        args = [q for q in query.lower().split() if not q.startswith("-")]
+        exclusion_terms = [q[1:] for q in query.lower().split() if q.startswith("-")]
+
         sources = []
         for song in self.songs:
-            for q in args:
-                if not (q in song.path_lower or q in song.get_name().lower()):
+            for q in exclusion_terms:
+                if q in song.path_lower or q in song.get_name().lower():
                     break
             else:
-                sources.append(song)
+                for q in args:
+                    if not (q in song.path_lower or q in song.get_name().lower()):
+                        break
+                else:
+                    sources.append(song)
         return sources
 
     @commands.command()
