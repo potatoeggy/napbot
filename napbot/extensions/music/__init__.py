@@ -345,9 +345,9 @@ class Music(commands.Cog):
                 embed.description += (
                     f"{offset + i + 1}. {s.get_name()}{' [LRC]' if s.lyrics else ''}\n"
                 )
-                embed.description += (
-                    f"\nPage {page + 1} of {math.ceil(len(songs) / ITEMS_PER_PAGE)}"
-                )
+            embed.description += (
+                f"\nPage {page + 1} of {math.ceil(len(songs) / ITEMS_PER_PAGE)}"
+            )
             await ctx.send(embed=embed)
             return
 

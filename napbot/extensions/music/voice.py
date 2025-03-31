@@ -70,9 +70,6 @@ class VoiceState:
         self.ctx = ctx
 
     async def audio_player(self):
-        if not self.vc:
-            return
-
         self.audio_running = True
         while True:
             try:
@@ -101,6 +98,8 @@ class VoiceState:
             start_time_m = int((start_time // 60) % 60)
             start_time_h = int(start_time // 3600)
             start_ts = f"{start_time_h:02}:{start_time_m:02}:{start_time_s:02}.{start_time_ms:03}"
+            if not self.vc:
+                continue
 
             self.vc.play(
                 discord.FFmpegOpusAudio(
