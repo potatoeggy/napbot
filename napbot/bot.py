@@ -5,9 +5,6 @@ import discord
 import traceback
 import asyncio
 
-
-log.set_log_level(config.log_level)
-
 bot = commands.Bot(command_prefix=",", intents=discord.Intents.all())
 
 
