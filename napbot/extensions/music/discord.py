@@ -1,15 +1,18 @@
 import io
 import time
 import asyncio
+from typing import TYPE_CHECKING
 
 from .song import Song
 
 
-from .voice import VoiceState
 from ...state import config, log
 from ...utils import BotContext
 import discord
 from discord.ext import commands
+
+if TYPE_CHECKING:
+    from .voice import VoiceState
 
 DEBUG_GUILDS = config.debug_guilds
 MAX_LINES = 5
@@ -20,7 +23,7 @@ class MusicPanel(discord.ui.View):
         self,
         bot: commands.Bot,
         title: str,
-        voice_state: VoiceState,
+        voice_state: "VoiceState",
         *,
         guess_vote_skip_percent: float | None = None,
     ):
@@ -97,7 +100,7 @@ class LyricPlayer:
         vc: discord.VoiceClient,
         ctx: BotContext,
         source: Song,
-        voice_state: VoiceState,
+        voice_state: "VoiceState",
         bot: commands.Bot,
         show_lyrics: bool,
     ):
