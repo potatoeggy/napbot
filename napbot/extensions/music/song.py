@@ -149,8 +149,8 @@ class SongQueue[T](asyncio.Queue[T]):
     @overload
     def __getitem__(self, item: int) -> T: ...
     @overload
-    def __getitem__(self, item: slice[T]) -> list[T]: ...
-    def __getitem__(self, item: int | slice[T]) -> T | list[T]:
+    def __getitem__(self, item: slice) -> list[T]: ...
+    def __getitem__(self, item: int | slice) -> T | list[T]:
         if isinstance(item, slice):
             return list(itertools.islice(self._queue, item.start, item.stop, item.step))
         else:

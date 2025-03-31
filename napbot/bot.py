@@ -18,9 +18,10 @@ async def run_bot():
             log.debug(f"Attempting to load extension {m}.")
             try:
                 # this is a coroutine so we want to blocking wait it
-                await bot.load_extension(f"extensions.{m}")
+                await bot.load_extension(f".extensions.{m}", package=__package__)
                 # asyncio.run(bot.load_extension(f"extensions.{m}"))
             except commands.ExtensionNotFound:
+                traceback.print_exc()
                 log.warn(f"Extension {m} was not found, skipping.")
             except commands.NoEntryPointError:
                 log.warn(f"Extension {m} is missing a global setup function, skipping.")

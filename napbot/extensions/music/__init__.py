@@ -5,7 +5,7 @@ import re
 import os
 from typing import Literal, overload
 
-from .discord import BotContext
+from ...utils import BotContext
 
 from .song import SLUGIFY_PATTERN, Song
 

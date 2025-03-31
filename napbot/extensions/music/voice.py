@@ -5,8 +5,8 @@ import discord
 from discord.ext import commands
 from async_timeout import timeout
 
-from .discord import BotContext, LyricPlayer, MusicPanel
-
+from .discord import LyricPlayer, MusicPanel
+from ...utils import BotContext
 from .song import Song, SongQueue
 
 

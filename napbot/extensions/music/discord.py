@@ -6,16 +6,13 @@ from .song import Song
 
 
 from .voice import VoiceState
-from state import config, log
-
+from ...state import config, log
+from ...utils import BotContext
 import discord
 from discord.ext import commands
 
 DEBUG_GUILDS = config.debug_guilds
 MAX_LINES = 5
-
-
-BotContext = commands.Context[commands.Bot]
 
 
 class MusicPanel(discord.ui.View):

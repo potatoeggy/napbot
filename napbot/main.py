@@ -1,6 +1,6 @@
 import asyncio
 
-from .napbot.bot import run_bot
+from .bot import run_bot
 
 
 def main():
