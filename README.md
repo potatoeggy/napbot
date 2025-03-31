@@ -21,6 +21,6 @@ For a given directory, Napbot can scan it for audio files (MP3s only for the tim
 ## Usage
 
 ```bash
-uv sync --all-groups
+uv sync --all-extras
 uv run start
 ```
