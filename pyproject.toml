@@ -1,0 +1,22 @@
+[project]
+name = "napbot"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "discord-py[voice]>=2.5.2",
+]
+
+[project.optional-dependencies]
+id3-metadata = [
+    "eyed3>=0.9.7",
+]
+playlists = [
+    "m3u8>=6.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "types-eyed3>=0.9.7.20250306",
+]

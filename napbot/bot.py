@@ -1,5 +1,5 @@
 #!/usr/bin/oython
-from state import log, config
+from .state import log, config
 from discord.ext import commands
 import discord
 import traceback
@@ -11,7 +11,7 @@ log.set_log_level(config.log_level)
 bot = commands.Bot(command_prefix=",", intents=discord.Intents.all())
 
 
-async def main():
+async def run_bot():
     async with bot:
         # import cogs
         for m in config.modules:
@@ -47,4 +47,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(run_bot())
