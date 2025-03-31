@@ -13,8 +13,6 @@ bot = commands.Bot(command_prefix=",", intents=discord.Intents.all())
 
 async def main():
     async with bot:
-        bot.log = log
-        bot.config = config
         # import cogs
         for m in config.modules:
             log.debug(f"Attempting to load extension {m}.")
@@ -38,7 +36,7 @@ async def main():
             log.info(f"Logged in to Discord as {bot.user}.")
 
         @bot.command(name="crash")
-        async def crash(ctx):
+        async def crash(ctx: commands.Context[commands.Bot]):
             if ctx.author.id in config.admin_ids:
                 await ctx.send("Crashing...")
                 exit(1)

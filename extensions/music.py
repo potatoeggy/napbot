@@ -1,3 +1,4 @@
+from collections import deque
 import string
 import traceback
 import io
@@ -9,8 +10,12 @@ import asyncio
 import contextlib
 import re
 import os
+from typing import Literal, overload
 
-from state import config
+from collections.abc import Iterator
+
+from ..iohandler import Logger
+from state import config, log
 
 import discord
 from discord.ext import commands
@@ -22,13 +27,14 @@ MAX_LINES = 5
 DEBUG_GUILDS = config.debug_guilds
 SLUGIFY_PATTERN = re.compile(rf"\s|\d|[{re.escape(string.punctuation)}]")
 
+BotContext = commands.Context[commands.Bot]
 
 try:
     from PIL import Image
 
     pillow_installed = True
 except ImportError:
-    print(" WARN: pillow is not installed, disabling dominant colour detection")
+    log.warn("pillow is not installed, disabling dominant colour detection")
     pillow_installed = False
 
 try:
@@ -36,9 +42,7 @@ try:
 
     eyed3_installed = True
 except ImportError:
-    print(
-        " WARN: eyed3 is not installed, disabling metadata"
-    )  # haha where logging module
+    log.warn("eyed3 is not installed, disabling metadata")
     eyed3_installed = False
 
 
@@ -57,18 +61,18 @@ def title_slugify(string: str) -> str:
 
 
 class Song:
-    def __init__(self, audio_path: str, log):
+    def __init__(self, audio_path: str, log: Logger):
         self.base_name = os.path.splitext(os.path.basename(audio_path))[0]
         self.path = audio_path
         self.path_lower = audio_path.lower()
-        self.artist = None
-        self.title = None
-        self.album = None
-        self.track_num = None
+        self.artist: str | None = None
+        self.title: str | None = None
+        self.album: str | None = None
+        self.track_num: int | None = None
         self.art = None
-        self.lyrics = []
-        self.lyric_timestamps = []
-        self.dominant_colour = None
+        self.lyrics: list[str] = []
+        self.lyric_timestamps: list[float] = []
+        self.dominant_colour: discord.Color | None = None
 
         # get art
         if eyed3_installed:
@@ -147,40 +151,49 @@ class Song:
         return f"{self.title} - {self.artist}"
 
 
-class SongQueue(asyncio.Queue):
-    def __getitem__(self, item):
+class SongQueue[T](asyncio.Queue[T]):
+    _queue: deque[T]
+
+    @overload
+    def __getitem__(self, item: int) -> T: ...
+    @overload
+    def __getitem__(self, item: slice[T]) -> list[T]: ...
+    def __getitem__(self, item: int | slice[T]) -> T | list[T]:
         if isinstance(item, slice):
             return list(itertools.islice(self._queue, item.start, item.stop, item.step))
         else:
             return self._queue[item]
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[T]:
         return self._queue.__iter__()
 
     def __len__(self):
         return self.qsize()
 
-    def clear(self):
+    def clear(self) -> None:
         self._queue.clear()
 
-    def remove(self, index: int):
+    def remove(self, index: int) -> None:
         del self._queue[index]
 
-    def putfirst(self, item):
+    def putfirst(self, item: T) -> None:
         self._queue.appendleft(item)
 
 
 class VoiceState:
     def __init__(
-        self, bot: commands.Bot, guess_mode=False, guess_vote_skip_percent: float = 0.0
+        self,
+        bot: commands.Bot,
+        guess_mode: bool = False,
+        guess_vote_skip_percent: float = 0.0,
     ):
         self.bot = bot
-        self.queue = SongQueue()
+        self.queue = SongQueue[tuple[Song, bool]]()
         self.current = None
         self.loop = asyncio.get_event_loop()
         self.next = asyncio.Event()
         self.player = bot.loop.create_task(self.audio_player())
-        self.vc = None
+        self.vc: discord.VoiceClient | None = None
         self.audio_running = False
 
         self.guess_mode = guess_mode
@@ -194,7 +207,10 @@ class VoiceState:
     def __bool__(self):
         return bool(self.vc)
 
-    async def skip(self, num: int = 1):
+    async def skip(self, num: int = 1) -> None:
+        if not self.vc:
+            return
+
         num -= 1
         for _ in range(num):
             await self.queue.get()
@@ -210,7 +226,7 @@ class VoiceState:
     def remove(self, num: int):
         self.queue.remove(num - 1)
 
-    async def connect(self, ctx):
+    async def connect(self, ctx: BotContext):
         channel = ctx.author.voice.channel
         self.vc = ctx.guild.voice_client
         if not self.audio_running:
@@ -224,6 +240,9 @@ class VoiceState:
         self.ctx = ctx
 
     async def audio_player(self):
+        if not self.vc:
+            return
+
         self.audio_running = True
         while True:
             try:
@@ -319,14 +338,14 @@ class MusicPanel(discord.ui.View):
     def __init__(
         self,
         bot: commands.Bot,
-        title,
+        title: str,
         voice_state: VoiceState,
         *,
         guess_vote_skip_percent: float | None = None,
     ):
         super().__init__()
         self.users_to_ping = list(
-            map(int, bot.config.config["napbot"].get("AdminIds", "").split(","))
+            map(int, config.config["napbot"].get("AdminIds", "").split(","))
         )
         self.title = title
         self.bot = bot
@@ -384,7 +403,7 @@ class MusicPanel(discord.ui.View):
                     f"**{str(interaction.user)}** would like you to update the lyrics for **{self.title}**."
                 )
             except TypeError:
-                self.bot.log.error(f"{admin} is not a valid user id.")
+                log.error(f"{admin} is not a valid user id.")
         button.label = "Lyric fix requested"
         button.style = discord.ButtonStyle.grey
         button.disabled = True
@@ -392,7 +411,15 @@ class MusicPanel(discord.ui.View):
 
 
 class LyricPlayer:
-    def __init__(self, vc, ctx, source, voice_state, bot, show_lyrics):
+    def __init__(
+        self,
+        vc: discord.VoiceClient,
+        ctx: BotContext,
+        source: Song,
+        voice_state: VoiceState,
+        bot: commands.Bot,
+        show_lyrics: bool,
+    ):
         self.vc = vc
         self.ctx = ctx
         self.source = source
@@ -481,24 +508,25 @@ class Music(commands.Cog):
         global eyed3_installed  # aiya x2
 
         self.bot = bot
-        self.log = bot.log
 
         self.guess_mode = False
 
         # read configuration
-        self.log.debug("Reading music configuration")
-        if "music" in bot.config.config:
-            conf = bot.config.config["music"]
-            self.root_path = conf.get("MusicPath", fallback="/media/Moosic")
-            self.show_song_status = conf.getboolean(
+        log.debug("Reading music configuration")
+        if "music" in config.config:
+            conf = config.config["music"]
+            self.root_path: str = conf.get("MusicPath", fallback="/media/Moosic")
+            self.show_song_status: bool = conf.getboolean(
                 "CurrentSongAsStatus", fallback=False
             )
             ignored_paths = conf.get("IgnoredPaths", fallback="").split(",")
-            self.ignored_paths = ignored_paths if ignored_paths[0] != "" else []
+            self.ignored_paths: list[str] = (
+                ignored_paths if ignored_paths[0] != "" else []
+            )
 
             pillow_installed = conf.getboolean("DominantColorEmbed", pillow_installed)
             eyed3_installed = conf.getboolean("Id3Metadata", eyed3_installed)
-            self.guess_vote_skip_percent = (
+            self.guess_vote_skip_percent: float | None = (
                 conf.getfloat("GuessVoteSkipPercent", 0.0) / 100
             )
         else:
@@ -513,8 +541,8 @@ class Music(commands.Cog):
         self.get_files()
 
     def get_files(self):
-        self.songs = []
-        self.log.info(f"Searching for songs from {self.root_path}.")
+        self.songs: list[Song] = []
+        log.info(f"Searching for songs from {self.root_path}.")
         ignored: int = 0
         for root, _, files in os.walk(self.root_path):
             for name in files:
@@ -525,21 +553,21 @@ class Music(commands.Cog):
                             break
                     else:
                         try:
-                            self.songs.append(Song(os.path.join(root, name), self.log))
+                            self.songs.append(Song(os.path.join(root, name), log))
                         except IOError:
                             # expected if file not found
                             pass
 
-        self.log.info(f"Found {len(self.songs)} songs, ignored {ignored}.")
+        log.info(f"Found {len(self.songs)} songs, ignored {ignored}.")
 
-    async def get_voice_state(self, ctx):
+    async def get_voice_state(self, ctx: BotContext):
         await self.voice_state.connect(ctx)
 
-    def find_songs(self, query) -> list:
+    def find_songs(self, query: str) -> list[Song]:
         args = [q for q in query.lower().split() if not q.startswith("-")]
         exclusion_terms = [q[1:] for q in query.lower().split() if q.startswith("-")]
 
-        sources = []
+        sources: list[Song] = []
         for song in self.songs:
             for q in exclusion_terms:
                 if q in song.path_lower or q in song.get_name().lower():
@@ -555,7 +583,7 @@ class Music(commands.Cog):
     @commands.command()
     async def guess(
         self,
-        ctx,
+        ctx: BotContext,
         show_artist: bool = False,
         start_from_random_pos: bool = False,
         pattern: str = "",
@@ -573,7 +601,7 @@ class Music(commands.Cog):
         await ctx.send("Guess mode activated! Type your guess of the song!")
 
     @commands.Cog.listener()
-    async def on_message(self, msg):
+    async def on_message(self, msg: discord.Message):
         content = msg.content
 
         if msg.author.bot or not (self.voice_state and self.voice_state.guess_mode):
@@ -590,28 +618,49 @@ class Music(commands.Cog):
     @commands.command(name="play")
     async def play(
         self,
-        ctx,
-        query="",
+        ctx: BotContext,
+        query: str = "",
         number: int = 1,
         play_random: bool = False,
         show_lyrics: bool = True,
     ):
         await self._play(ctx, query, number, play_random, show_lyrics)
 
+    @overload
     async def _play(
         self,
-        ctx,
-        query="",
+        ctx: BotContext,
+        query: str = "",
+        number: int = 1,
+        play_random: bool = False,
+        show_lyrics: bool = True,
+        return_to_function: Literal[True] = True,
+    ) -> list[Song]: ...
+    @overload
+    async def _play(
+        self,
+        ctx: BotContext,
+        query: str = "",
+        number: int = 1,
+        play_random: bool = False,
+        show_lyrics: bool = True,
+        return_to_function: Literal[False] = False,
+    ) -> None: ...
+    async def _play(
+        self,
+        ctx: BotContext,
+        query: str = "",
         number: int = 1,
         play_random: bool = False,
         show_lyrics: bool = True,
         return_to_function: bool = False,
-    ) -> list:
+    ) -> list[Song] | None:
         if self.voice_state and self.voice_state.guess_mode:
-            return await ctx.send(
+            await ctx.send(
                 "Cannot add songs while Guess Mode is on. "
                 "Restore normal function by running /stop then /play."
             )
+            return
 
         # treat numbers <= 0 as play all
         play_all = number <= 0
@@ -622,9 +671,10 @@ class Music(commands.Cog):
                 if not play_all:
                     sources = [sources[number - 1]]
             except IndexError:
-                return await ctx.send(
+                await ctx.send(
                     f"No songs matching '{query}' were found at the specified index."
                 )
+                return
         else:
             # if query is empty play a random song
             if play_all:
@@ -639,7 +689,8 @@ class Music(commands.Cog):
             await self.get_voice_state(ctx)
         except AttributeError:
             print(traceback.format_exc())
-            return await ctx.send("You are not in a voice channel.")
+            await ctx.send("You are not in a voice channel.")
+            return
 
         if return_to_function:
             return sources
@@ -654,8 +705,8 @@ class Music(commands.Cog):
     @commands.command(name="playnow")
     async def play_now(
         self,
-        ctx,
-        query="",
+        ctx: BotContext,
+        query: str = "",
         number: int = 1,
         play_random: bool = False,
         show_lyrics: bool = True,
@@ -676,8 +727,8 @@ class Music(commands.Cog):
     @commands.command(name="playnext")
     async def play_next(
         self,
-        ctx,
-        query="",
+        ctx: BotContext,
+        query: str = "",
         number: int = 1,
         play_random: bool = False,
         show_lyrics: bool = True,
@@ -693,12 +744,12 @@ class Music(commands.Cog):
             await ctx.send(f"Added **{sources[0].get_name()}** to the queue.")
 
     @commands.command(name="skip")
-    async def skip(self, ctx, number: int = 1):
+    async def skip(self, ctx: BotContext, number: int = 1):
         await self.voice_state.skip(number)
         await ctx.send("Skipped track.")
 
     @commands.command(name="search")
-    async def search(self, ctx, query, page: int = 1):
+    async def search(self, ctx: BotContext, query: str, page: int = 1):
         page -= 1
         sources = self.find_songs(query)
         offset = page * ITEMS_PER_PAGE
@@ -716,18 +767,18 @@ class Music(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command(name="stop")
-    async def stop(self, ctx):
+    async def stop(self, ctx: BotContext):
         self.voice_state.guess_mode = False
         await self.voice_state.stop()
         await ctx.send("Goodbye!")
 
     @commands.command(name="clear")
-    async def clear_queue(self, ctx):
+    async def clear_queue(self, ctx: BotContext):
         self.voice_state.queue.clear()
         await ctx.send("Cleared the queue!")
 
     @commands.command(name="queue")
-    async def show_queue(self, ctx, page: int = 1):
+    async def show_queue(self, ctx: BotContext, page: int = 1):
         if self.voice_state and self.voice_state.guess_mode:
             return await ctx.send("Queue disabled in guess mode!")
 

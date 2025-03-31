@@ -1,5 +1,6 @@
 import configparser
 import os
+from typing import Any
 
 
 class Logger:
@@ -12,20 +13,20 @@ class Logger:
     def __init__(self, log_level: int = 0):
         self.log_level = log_level
 
-    def _log(self, msg, log_level: int):
+    def _log(self, msg: Any, log_level: int):
         if log_level >= self.log_level:
             print(f"{Logger.LOG_STRINGS[log_level]}: {msg}")
 
-    def debug(self, msg):
+    def debug(self, msg: Any):
         self._log(msg, Logger.DEBUG_LEVEL)
 
-    def info(self, msg):
+    def info(self, msg: Any):
         self._log(msg, Logger.INFO_LEVEL)
 
-    def warn(self, msg):
+    def warn(self, msg: Any):
         self._log(msg, Logger.WARN_LEVEL)
 
-    def error(self, msg, abort: bool = False):
+    def error(self, msg: Any, abort: bool = False):
         self._log(msg, Logger.ERROR_LEVEL)
         if abort:
             exit(1)

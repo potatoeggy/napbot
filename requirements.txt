@@ -1,2 +1,6 @@
 discord.py[voice]==2.5.1
 eyed3==0.9.7
+types-eyed3==0.9.7.20250306
+
+# optional for playlist support
+m3u8==6.0.0
