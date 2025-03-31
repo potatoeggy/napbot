@@ -14,3 +14,4 @@ Id3Metadata=True
 SynchronisedLyrics=True
 IgnoredPaths=/media/Moosic/Ignore
 GuessVoteSkipPercent=50
+Playlists=True

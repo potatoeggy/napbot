@@ -1,9 +1,11 @@
+from pathlib import Path
 import traceback
 import math
 import random
 import re
-import os
 from typing import Literal, overload
+
+from .playlist import load_playlists
 
 from ...utils import BotContext
 
@@ -54,28 +56,52 @@ class Music(commands.Cog):
 
     def get_files(self):
         self.songs: list[Song] = []
+
         log.info(f"Searching for songs from {self.root_path}.")
         ignored: int = 0
-        for root, _, files in os.walk(self.root_path):
-            for name in files:
-                if name.endswith(".mp3"):
-                    for query in self.ignored_paths:
-                        if query in root:
-                            ignored += 1
-                            break
-                    else:
-                        try:
-                            self.songs.append(Song(os.path.join(root, name), log))
-                        except IOError:
-                            # expected if file not found
-                            pass
+        for file in Path(self.root_path).rglob("*.mp3"):
+            abs_path_parent = str(file.resolve().parent.absolute())
+            abs_path = str(file.resolve().absolute())
+            if file.suffix == ".mp3":
+                for query in self.ignored_paths:
+                    if query in abs_path_parent:
+                        ignored += 1
+                        break
+                else:
+                    try:
+                        self.songs.append(Song(abs_path, log))
+                    except IOError:
+                        # expected if file not found
+                        pass
+
+        self.song_map = {song.path: song for song in self.songs}
 
         log.info(f"Found {len(self.songs)} songs, ignored {ignored}.")
+
+        playlists = load_playlists()
+
+        self.playlist_map: dict[str, list[Song]] = {}
+
+        for name, songs in playlists.items():
+            song_list: list[Song] = []
+            for song in songs:
+                if song in self.song_map:
+                    song_list.append(self.song_map[song])
+                else:
+                    log.warn(
+                        f"Playlist '{name}' contains song '{song}' which does not exist."
+                    )
+            self.playlist_map[name] = song_list
+
+        log.info(f"Loaded {len(self.playlist_map)} playlists.")
 
     async def get_voice_state(self, ctx: BotContext):
         await self.voice_state.connect(ctx)
 
     def find_songs(self, query: str) -> list[Song]:
+        if self.playlist_map.get(query):
+            return self.playlist_map[query]
+
         args = [q for q in query.lower().split() if not q.startswith("-")]
         exclusion_terms = [q[1:] for q in query.lower().split() if q.startswith("-")]
 
@@ -303,6 +329,43 @@ class Music(commands.Cog):
             embed.description += f"{offset + i + 1}. {s[0].get_name()}{' [LRC]' if s[0].lyrics else ''}\n"
         embed.description += f"\nPage {page + 1} of {math.ceil(len(self.voice_state.queue) / ITEMS_PER_PAGE)}"
         await ctx.send(embed=embed)
+
+    @commands.command(name="playlists")
+    async def show_playlists(self, ctx: BotContext, playlist: str = "", page: int = 1):
+        if playlist:
+            if playlist not in self.playlist_map:
+                return await ctx.send(f"Playlist '{playlist}' not found.")
+            songs = self.playlist_map[playlist]
+            page -= 1
+            if len(songs) < 1:
+                return await ctx.send("Nothing in the playlist on this page.")
+            offset = page * ITEMS_PER_PAGE
+            embed = discord.Embed(title=f"Playlist '{playlist}'", description="")
+            for i, s in enumerate(songs[offset : offset + ITEMS_PER_PAGE]):
+                embed.description += (
+                    f"{offset + i + 1}. {s.get_name()}{' [LRC]' if s.lyrics else ''}\n"
+                )
+                embed.description += (
+                    f"\nPage {page + 1} of {math.ceil(len(songs) / ITEMS_PER_PAGE)}"
+                )
+            await ctx.send(embed=embed)
+            return
+
+        embed = discord.Embed(title="Playlists", description="")
+        for name, songs in self.playlist_map.items():
+            embed.description += f"{name} ({len(songs)} songs)\n"
+        await ctx.send(embed=embed)
+
+    @commands.command(name="playlist")
+    async def play_playlist(self, ctx: BotContext, name: str):
+        if name not in self.playlist_map:
+            return await ctx.send(f"Playlist '{name}' not found.")
+
+        for song in self.playlist_map[name]:
+            await self.voice_state.add(song)
+        await ctx.send(
+            f"Added {len(self.playlist_map[name])} songs from '{name}' to the queue."
+        )
 
 
 async def setup(bot: commands.Bot):
