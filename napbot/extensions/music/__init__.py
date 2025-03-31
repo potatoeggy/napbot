@@ -10,7 +10,7 @@ from .discord import BotContext
 from .song import SLUGIFY_PATTERN, Song
 
 from .voice import VoiceState
-from state import config, log
+from ...state import config, log
 
 import discord
 from discord.ext import commands
@@ -21,7 +21,6 @@ ITEMS_PER_PAGE = 10
 
 class Music(commands.Cog):
     def __init__(self, bot: commands.Bot):
-
         self.bot = bot
 
         self.guess_mode = False
@@ -231,7 +230,7 @@ class Music(commands.Cog):
             await self.voice_state.add(s, True, show_lyrics)
         if len(sources) > 1:
             await ctx.send(
-                f"Playing **{sources[0].get_name()}**, added {len(sources)-1} songs to the queue."
+                f"Playing **{sources[0].get_name()}**, added {len(sources) - 1} songs to the queue."
             )
         else:
             await ctx.send(f"Playing **{sources[0].get_name()}**.")
@@ -272,10 +271,10 @@ class Music(commands.Cog):
         embed = discord.Embed(title=f"Moosic containing '{query}'", description="")
         for i, n in enumerate(sources[offset : offset + ITEMS_PER_PAGE]):
             embed.description += (
-                f"{offset+i+1}. {n.get_name()}{' [LRC]' if n.lyrics else ''}\n"
+                f"{offset + i + 1}. {n.get_name()}{' [LRC]' if n.lyrics else ''}\n"
             )
         embed.description += (
-            f"\nPage {page+1} of {math.ceil(len(sources) / ITEMS_PER_PAGE)}"
+            f"\nPage {page + 1} of {math.ceil(len(sources) / ITEMS_PER_PAGE)}"
         )
         await ctx.send(embed=embed)
 
@@ -301,10 +300,8 @@ class Music(commands.Cog):
         offset = page * ITEMS_PER_PAGE
         embed = discord.Embed(title="Queue", description="")
         for i, s in enumerate(self.voice_state.queue[offset : offset + ITEMS_PER_PAGE]):
-            embed.description += (
-                f"{offset+i+1}. {s[0].get_name()}{' [LRC]' if s[0].lyrics else ''}\n"
-            )
-        embed.description += f"\nPage {page+1} of {math.ceil(len(self.voice_state.queue) / ITEMS_PER_PAGE)}"
+            embed.description += f"{offset + i + 1}. {s[0].get_name()}{' [LRC]' if s[0].lyrics else ''}\n"
+        embed.description += f"\nPage {page + 1} of {math.ceil(len(self.voice_state.queue) / ITEMS_PER_PAGE)}"
         await ctx.send(embed=embed)
 
 
