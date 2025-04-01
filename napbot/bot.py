@@ -5,7 +5,7 @@ import discord
 import traceback
 import asyncio
 
-bot = commands.Bot(command_prefix=",", intents=discord.Intents.all())
+bot = commands.Bot(command_prefix=config.command_prefix, intents=discord.Intents.all())
 
 
 async def run_bot():

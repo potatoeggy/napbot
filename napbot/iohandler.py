@@ -52,3 +52,4 @@ class Config:
         )
         self.bot_token = general.get("BotToken")
         self.modules = general.get("Modules", fallback="").split(",")
+        self.command_prefix = general.get("CommandPrefix") or ","

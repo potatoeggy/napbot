@@ -4,6 +4,7 @@ BotToken=
 DebugGuilds=
 AdminIds=
 Modules=music
+ConfigPrefix=,
 
 [music]
 MusicPath=/media/Moosic
