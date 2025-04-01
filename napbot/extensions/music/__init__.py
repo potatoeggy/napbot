@@ -223,6 +223,12 @@ class Music(commands.Cog):
         # if there's only one it doesn't matter if more we want to shuffle them
         random.shuffle(sources)
 
+        if not sources:
+            await ctx.send(
+                f"No songs matching '{query}' were found at the specified index."
+            )
+            return
+
         try:
             await self.get_voice_state(ctx)
         except AttributeError:
