@@ -1,5 +1,7 @@
+from collections import Counter
 import random
 import asyncio
+from typing import Literal
 
 import discord
 from discord.ext import commands
@@ -29,7 +31,7 @@ class VoiceState:
         self.guess_mode = guess_mode
         self.guess_show_artist = False
         self.guess_vote_skip_percent = guess_vote_skip_percent
-        self.start_from_random_pos = False
+        self.start_pos: Literal["RANDOM", "CHORUS", "BEGINNING"] = "BEGINNING"
 
     def __del__(self):
         self.player.cancel()
@@ -82,14 +84,27 @@ class VoiceState:
 
             song, show_lyrics = self.current
             start_time = 0
-            if self.start_from_random_pos and self.guess_mode:
-                # this only works if there are lyrics
-                # start the time from anywhere
-                first_third_timestamps = [
-                    0,
-                    *song.lyric_timestamps[: len(song.lyric_timestamps) // 3],
-                ]
-                start_time = random.choice(first_third_timestamps)
+            if self.guess_mode:
+                if self.start_pos == "RANDOM":
+                    # pick a random lyric if any, otherwise fall back to beginning
+                    first_third_timestamps = [
+                        0,
+                        *song.lyric_timestamps[: len(song.lyric_timestamps) // 3],
+                    ]
+                    start_time = random.choice(first_third_timestamps)
+                elif self.start_pos == "CHORUS":
+                    # attempt to find the chorus by finding the first most common
+                    # lyric and its timestamp
+                    # if no lyric timestamps, fall back to beginning
+                    if song.lyric_timestamps:
+                        most_common_lyric = Counter(song.lyrics).most_common(1)[0][0]
+                        common_lyric_index = song.lyrics.index(most_common_lyric)
+                        most_common_lyric_timestamp = song.lyric_timestamps[
+                            common_lyric_index
+                        ]
+                        start_time = most_common_lyric_timestamp
+                    else:
+                        start_time = 0
 
             start_time_ms = int(
                 (start_time % 1) * 1000

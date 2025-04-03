@@ -123,7 +123,7 @@ class Music(commands.Cog):
         self,
         ctx: BotContext,
         show_artist: bool = False,
-        start_from_random_pos: bool = False,
+        start_pos: Literal["RANDOM", "CHORUS", "BEGINNING"] = "BEGINNING",
         pattern: str = "",
     ):
         if self.voice_state:  # if connected
@@ -133,7 +133,7 @@ class Music(commands.Cog):
 
         self.voice_state.guess_mode = True
         self.voice_state.guess_show_artist = show_artist
-        self.voice_state.start_from_random_pos = start_from_random_pos
+        self.voice_state.start_pos = start_pos
 
         await self._play(ctx, pattern, 0, play_random=False, show_lyrics=False)
         await ctx.send("Guess mode activated! Type your guess of the song!")
