@@ -9,7 +9,7 @@ from .playlist import load_playlists
 
 from ...utils import BotContext
 
-from .song import SLUGIFY_PATTERN, Song
+from .song import SLUGIFY_PATTERN, Song, title_slugify
 
 from .voice import VoiceState
 from ...state import config, log
@@ -40,13 +40,15 @@ class Music(commands.Cog):
                 ignored_paths if ignored_paths[0] != "" else []
             )
 
-            self.guess_vote_skip_percent: float | None = (
+            self.guess_vote_skip_percent: float = (
                 conf.getfloat("GuessVoteSkipPercent", 0.0) / 100
             )
+            self.guess_lenient: bool = conf.getboolean("GuessLenient", fallback=True)
         else:
             self.root_path = "/media/Moosic"
             self.show_song_status = False
-            self.guess_vote_skip_percent = None
+            self.guess_vote_skip_percent = 0
+            self.guess_lenient = False
 
         self.voice_state = VoiceState(
             self.bot, guess_vote_skip_percent=self.guess_vote_skip_percent
@@ -142,13 +144,15 @@ class Music(commands.Cog):
     async def on_message(self, msg: discord.Message):
         content = msg.content
 
-        if msg.author.bot or not (self.voice_state and self.voice_state.guess_mode):
+        # ignore self
+        if msg.author.id == self.bot.user.id or not (
+            self.voice_state and self.voice_state.guess_mode
+        ):
             return
 
         current_title = self.voice_state.current[0].title_slugified
-        if (
-            re.sub(SLUGIFY_PATTERN, "", content.lower().replace("&", "and"))
-            == current_title
+        if title_slugify(content) == current_title or (
+            self.guess_lenient and current_title in title_slugify(content)
         ):
             await self.voice_state.skip()
             await msg.reply(f":white_check_mark: Correct, {msg.author}!")
