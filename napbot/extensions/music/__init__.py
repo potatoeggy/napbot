@@ -133,6 +133,7 @@ class Music(commands.Cog):
                 "Napbot must not be in a voice channel to turn on Guess Mode."
             )
 
+        self.guess_leaderboard = dict[int, int]()
         self.voice_state.guess_mode = True
         self.voice_state.guess_show_artist = show_artist
         self.voice_state.start_pos = start_pos
@@ -154,8 +155,13 @@ class Music(commands.Cog):
         if title_slugify(content) == current_title or (
             self.guess_lenient and current_title in title_slugify(content)
         ):
+            self.guess_leaderboard[msg.author.id] = (
+                self.guess_leaderboard.get(msg.author.id, 0) + 1
+            )
             await self.voice_state.skip()
-            await msg.reply(f":white_check_mark: Correct, {msg.author}!")
+            await msg.reply(
+                f":white_check_mark: Correct, {msg.author}! Score: {self.guess_leaderboard[msg.author.id]}"
+            )
 
     @commands.command(name="play")
     async def play(
