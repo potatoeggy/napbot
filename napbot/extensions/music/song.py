@@ -14,6 +14,7 @@ from ...state import log, config
 
 import discord
 from opencc import OpenCC
+import regex
 import string
 
 
@@ -36,10 +37,10 @@ except ImportError:
     pillow_installed = False
 
 
-SLUGIFY_PATTERN = re.compile(rf"\s|\d|[{re.escape(string.punctuation)}]")
+SLUGIFY_PATTERN = regex.compile(rf"\s|\d|[{re.escape(string.punctuation)}]")
 
-_non_ascii_punct_or_symbol = re.compile(r"[\p{P}\p{So}]+", flags=re.UNICODE)
-_whitespace = re.compile(r"\s+")
+_non_ascii_punct_or_symbol = regex.compile(r"[\p{P}\p{So}]+", flags=re.UNICODE)
+_whitespace = regex.compile(r"\s+")
 
 cc = OpenCC("t2s.json")
 
