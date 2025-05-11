@@ -288,6 +288,7 @@ source = { editable = "." }
 dependencies = [
     { name = "async-timeout" },
     { name = "discord-py", extra = ["voice"] },
+    { name = "opencc" },
 ]
 
 [package.optional-dependencies]
@@ -312,12 +313,19 @@ requires-dist = [
     { name = "discord-py", extras = ["voice"], specifier = ">=2.5.2" },
     { name = "eyed3", marker = "extra == 'music-id3metadata'", specifier = ">=0.9.7" },
     { name = "m3u8", marker = "extra == 'music-playlists'", specifier = ">=6.0.0" },
+    { name = "opencc", specifier = ">=1.1.9" },
     { name = "pillow", marker = "extra == 'music-dominantcolour'", specifier = ">=11.1.0" },
 ]
 provides-extras = ["music-id3metadata", "music-playlists", "music-dominantcolour"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "types-eyed3", specifier = ">=0.9.7.20250306" }]
+
+[[package]]
+name = "opencc"
+version = "1.1.9"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e6/a2/0e86df1284143c389a3a6e33b159394da34b500a62b2b9c918949a2e6438/opencc-1.1.9.tar.gz", hash = "sha256:8ad72283732951303390fae33a1ceda98ac9b03368a8f2912edc934d74077e4a", size = 3409025 }
 
 [[package]]
 name = "packaging"

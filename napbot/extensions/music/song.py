@@ -13,6 +13,7 @@ from ...iohandler import Logger
 from ...state import log, config
 
 import discord
+from opencc import OpenCC
 import string
 
 
@@ -37,19 +38,37 @@ except ImportError:
 
 SLUGIFY_PATTERN = re.compile(rf"\s|\d|[{re.escape(string.punctuation)}]")
 
+_non_ascii_punct_or_symbol = re.compile(r"[\p{P}\p{So}]+", flags=re.UNICODE)
+_whitespace = re.compile(r"\s+")
 
-def title_slugify(string: str) -> str:
-    """
-    Take the important part of a song title
-    """
-    par_index = string.find("(")
+cc = OpenCC("t2s.json")
 
-    new_index = par_index if par_index != -1 else None
-    title_before_brackets = string[:new_index]
-    title_slugified = re.sub(
-        SLUGIFY_PATTERN, "", title_before_brackets.replace("&", "and")
-    )
-    return title_slugified.lower()
+
+def title_slugify(title: str) -> str:
+    """
+    Slugify a song title with the rules:
+      • Ignore anything after the first '('
+      • Replace '&' with 'and'
+      • Convert Traditional Chinese chars to Simplified
+      • Strip emoji and non-ASCII punctuation/symbols
+      • Collapse whitespace to single dashes, lowercase result
+    """
+    # 1. focus on text before a parenthetical
+    cut = title.find("(")
+    core = title[:cut] if cut != -1 else title
+
+    # 2. minor substitutions
+    core = core.replace("&", "and")
+
+    # 3. Traditional‑>Simplified conversion
+    core = cc.convert(core)
+
+    # 4. drop emoji / non‑ASCII punctuation
+    core = _non_ascii_punct_or_symbol.sub("", core)
+
+    # 5. collapse whitespace and lower‑case
+    core = _whitespace.sub("", core).lower()
+    return core
 
 
 class Song:

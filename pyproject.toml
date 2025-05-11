@@ -4,7 +4,11 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = ["async-timeout>=5.0.1", "discord-py[voice]>=2.5.2"]
+dependencies = [
+    "async-timeout>=5.0.1",
+ "discord-py[voice]>=2.5.2",
+ "opencc>=1.1.9",
+]
 
 [project.scripts]
 start = "napbot.main:main"
