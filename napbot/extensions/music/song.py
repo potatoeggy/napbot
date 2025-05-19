@@ -1,3 +1,5 @@
+import concurrent.futures
+from asyncio import TaskGroup, Task
 from collections import deque
 import io
 import itertools
@@ -5,7 +7,11 @@ import asyncio
 import contextlib
 import re
 import os
-from typing import overload
+from ctypes.wintypes import HTASK
+from concurrent.futures import Future
+from importlib.metadata import always_iterable
+from operator import itemgetter
+from typing import overload, Callable, override, Tuple
 
 from collections.abc import Iterator
 
@@ -17,7 +23,7 @@ from opencc import OpenCC
 import regex
 import string
 
-
+from enum import Enum
 try:
     import eyed3
 
@@ -43,6 +49,13 @@ _non_ascii_punct_or_symbol = regex.compile(r"[\p{P}\p{So}]+", flags=re.UNICODE)
 _whitespace = regex.compile(r"\s+")
 
 cc = OpenCC("t2s.json")
+
+class SongStatus(Enum):
+    LOCAL = 0,
+    AVAILABLE = 1,
+    NOT_FOUND = 2,
+    NOT_AVAILABLE = 3,
+    DOWNLOADING = 4
 
 
 def title_slugify(title: str) -> str:
@@ -73,7 +86,9 @@ def title_slugify(title: str) -> str:
 
 
 class Song:
-    def __init__(self, audio_path: str, log: Logger):
+    song_count = 0
+    def __init__(self, audio_path: str, log: Logger, status: SongStatus = SongStatus.LOCAL,
+                 download_task: Callable[[Callable], None] | None = None):
         self.base_name = os.path.splitext(os.path.basename(audio_path))[0]
         self.path = audio_path
         self.path_lower = audio_path.lower()
@@ -85,7 +100,13 @@ class Song:
         self.lyrics: list[str] = []
         self.lyric_timestamps: list[float] = []
         self.dominant_colour: discord.Color | None = None
+        self.status: SongStatus = status
+        self.download_task = lambda: download_task(lambda status: setattr(self, "status", status))
+        self.song_position = Song.song_count
+        Song.song_count += 1
 
+        if self.status == SongStatus.NOT_AVAILABLE:
+            return
         # get art
         if eyed3_installed:
             with open(os.devnull, "w") as null:
@@ -157,14 +178,33 @@ class Song:
             return self.base_name
         return f"{self.title} - {self.artist}"
 
+    def set_title(self, title: str):
+        """
+        Set the name of the song. This will not change the file name.
+        """
+        self.title = title
+        self.title_slugified = title_slugify(title)
+
     def __str__(self):
         if not (self.title and self.artist):
             return self.base_name
         return f"{self.title} - {self.artist}"
 
+    def __lt__(self, other):
+        if not isinstance(other, Song):
+            return NotImplemented
+
+        if self.status == SongStatus.DOWNLOADING:
+            return False
+        return self.song_position < other.song_position
 
 class SongQueue[T](asyncio.Queue[T]):
     _queue: deque[T]
+    _maxDownloadSize = config.config["music"].getint("MaxDownloadQueue", 5)
+    _download_executor = concurrent.futures.ThreadPoolExecutor(
+        max_workers=_maxDownloadSize,
+        thread_name_prefix="Downloader"
+    )
 
     @overload
     def __getitem__(self, item: int) -> T: ...
@@ -182,11 +222,39 @@ class SongQueue[T](asyncio.Queue[T]):
     def __len__(self):
         return self.qsize()
 
+    def _onUpdate(self) -> Future | None:
+        if not self._queue or not isinstance(self._queue[0], tuple):
+            return None
+
+        last_task = None
+        for song, _ in list(self._queue)[:self._maxDownloadSize]:
+            if isinstance(song, Song) and song.status == SongStatus.NOT_AVAILABLE:
+                song.status = SongStatus.DOWNLOADING
+                last_task = self._download_executor.submit(song.download_task)
+
+        return last_task
+
+    @override
+    def put_nowait(self, item: T) -> None:
+        super().put_nowait(item)
+        self._onUpdate()
+
+    async def get_with_update(self) -> T:
+        item = await self.get()
+        self._onUpdate()
+        return item
+
     def clear(self) -> None:
         self._queue.clear()
 
     def remove(self, index: int) -> None:
         del self._queue[index]
+        self._onUpdate()
 
     def putfirst(self, item: T) -> None:
-        self._queue.appendleft(item)
+        task = self._onUpdate()
+        if task is not None: # only add the song if the task is finished downloading
+            task.add_done_callback(lambda _: self._queue.appendleft(item))
+        else:
+            self._queue.appendleft(item)
+

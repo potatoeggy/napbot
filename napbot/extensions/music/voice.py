@@ -1,15 +1,19 @@
-from collections import Counter
-import random
 import asyncio
+import random
+from collections import Counter
+from importlib.metadata import always_iterable
 from typing import Literal
 
 import discord
-from discord.ext import commands
 from async_timeout import timeout
+from discord.ext import commands
+from discord.player import AudioPlayer
+from idna import valid_contextj
 
 from .discord import LyricPlayer, MusicPanel
+from .song import Song, SongQueue, SongStatus
+from ...state import config
 from ...utils import BotContext
-from .song import Song, SongQueue
 
 
 class VoiceState:
@@ -23,8 +27,8 @@ class VoiceState:
         self.queue = SongQueue[tuple[Song, bool]]()
         self.current = None
         self.loop = asyncio.get_event_loop()
-        self.next = asyncio.Event()
-        self.player = bot.loop.create_task(self.audio_player())
+        self.ready = asyncio.Event()
+        self.player = None
         self.vc: discord.VoiceClient | None = None
         self.audio_running = False
 
@@ -45,7 +49,7 @@ class VoiceState:
 
         num -= 1
         for _ in range(num):
-            await self.queue.get()
+            await self.queue.get_with_update()
         if self.current:
             self.vc.stop()
 
@@ -61,8 +65,6 @@ class VoiceState:
     async def connect(self, ctx: BotContext):
         channel = ctx.author.voice.channel
         self.vc = ctx.guild.voice_client
-        if not self.audio_running:
-            self.player = self.bot.loop.create_task(self.audio_player())
         if self.vc:
             if self.vc.channel.id == channel.id:
                 return
@@ -71,18 +73,41 @@ class VoiceState:
             self.vc = await channel.connect()
         self.ctx = ctx
 
+        if not self.audio_running:
+            self.player = self.bot.loop.create_task(self.audio_player())
+
+
     async def audio_player(self):
-        self.audio_running = True
+        downloading_songs = 0
         while True:
             try:
-                async with timeout(180):
-                    self.current = await self.queue.get()
+                async with timeout(180): # vc should be started before audio player
+                    if self.vc is None or not self.vc.is_connected():
+                        self.audio_running = False
+                        return # else it is a user interrupt and we exit
+                    self.audio_running = True
+                    self.ready.set()
+                    self.current = await self.queue.get_with_update()
             except asyncio.TimeoutError:
                 self.bot.loop.create_task(self.stop())
                 self.audio_running = False
                 return
 
             song, show_lyrics = self.current
+            # TODO: need a better heuristic, if the entire queue was external, this would loop the entire queue (expensive)
+            if song.status == SongStatus.NOT_AVAILABLE or song.status == SongStatus.DOWNLOADING:
+                print("Song is not available or downloading, adding back into queue.")
+                if downloading_songs == len(self.queue):
+                    while song.status != SongStatus.AVAILABLE or song.status != SongStatus.NOT_FOUND:
+                        await asyncio.sleep(0.5)
+                else:
+                    await self.queue.put(song)
+                    downloading_songs += 1
+                continue
+            if song.status == SongStatus.NOT_FOUND:
+                print("Song not found, skipping.")
+                continue
+
             start_time = 0
             if self.guess_mode:
                 if self.start_pos == "RANDOM":
@@ -115,12 +140,16 @@ class VoiceState:
             start_ts = f"{start_time_h:02}:{start_time_m:02}:{start_time_s:02}.{start_time_ms:03}"
             if not self.vc:
                 continue
-
-            self.vc.play(
-                discord.FFmpegOpusAudio(
-                    source=song.path, bitrate=96, before_options=f"-ss {start_ts}"
+            try:
+                self.vc.play(
+                    discord.FFmpegOpusAudio(
+                        source=song.path, bitrate=config.config["music"].getint("Bitrate", 320), before_options=f"-ss {start_ts}"
+                    )
                 )
-            )
+            except Exception as e:
+                print(f"Error playing song: {e}")
+                continue
+
             if not self.guess_mode:
                 lyric_client = LyricPlayer(
                     self.vc, self.ctx, song, self, self.bot, show_lyrics
@@ -176,3 +205,8 @@ class VoiceState:
             self.vc.stop()
             await self.vc.disconnect()
             self.vc = None
+
+        if self.audio_running:
+            self.audio_running = False
+            self.player = None
+            self.player_ready = None

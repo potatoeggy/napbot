@@ -1,15 +1,25 @@
+import os
+from codecs import namereplace_errors
 from pathlib import Path
 import traceback
 import math
 import random
 import re
-from typing import Literal, overload
+import asyncio
+from warnings import catch_warnings
+
+import yt_dlp
+from typing import Literal, overload, Callable
+
+import spotipy
+from spotipy import SpotifyOAuth, SpotifyClientCredentials
+from yt_dlp.utils import whole_high
 
 from .playlist import load_playlists
 
 from ...utils import BotContext
 
-from .song import SLUGIFY_PATTERN, Song, title_slugify
+from .song import SLUGIFY_PATTERN, Song, title_slugify, SongStatus
 
 from .voice import VoiceState
 from ...state import config, log
@@ -17,9 +27,12 @@ from ...state import config, log
 import discord
 from discord.ext import commands
 
+from youtube_search import YoutubeSearch
+
 MANUAL_LYRIC_OFFSET = 0
 ITEMS_PER_PAGE = 10
 
+SPOTIFY_MARKETS = ['AR', 'AU', 'AT', 'BE', 'BO', 'BR', 'BG', 'CA', 'CL', 'CO', 'CR', 'CY', 'CZ', 'DK', 'DO', 'DE', 'EC', 'EE', 'SV', 'FI', 'FR', 'GR', 'GT', 'HN', 'HK', 'HU', 'IS', 'IE', 'IT', 'LV', 'LT', 'LU', 'MY', 'MT', 'MX', 'NL', 'NZ', 'NI', 'NO', 'PA', 'PY', 'PE', 'PH', 'PL', 'PT', 'SG', 'SK', 'ES', 'SE', 'CH', 'TW', 'TR', 'UY', 'US', 'GB', 'AD', 'LI', 'MC', 'ID', 'JP', 'TH', 'VN', 'RO', 'IL', 'ZA', 'SA', 'AE', 'BH', 'QA', 'OM', 'KW', 'EG', 'MA', 'DZ', 'TN', 'LB', 'JO', 'PS', 'IN', 'BY', 'KZ', 'MD', 'UA', 'AL', 'BA', 'HR', 'ME', 'MK', 'RS', 'SI', 'KR', 'BD', 'PK', 'LK', 'GH', 'KE', 'NG', 'TZ', 'UG', 'AG', 'AM', 'BS', 'BB', 'BZ', 'BT', 'BW', 'BF', 'CV', 'CW', 'DM', 'FJ', 'GM', 'GE', 'GD', 'GW', 'GY', 'HT', 'JM', 'KI', 'LS', 'LR', 'MW', 'MV', 'ML', 'MH', 'FM', 'NA', 'NR', 'NE', 'PW', 'PG', 'WS', 'SM', 'ST', 'SN', 'SC', 'SL', 'SB', 'KN', 'LC', 'VC', 'SR', 'TL', 'TO', 'TT', 'TV', 'VU', 'AZ', 'BN', 'BI', 'KH', 'CM', 'TD', 'KM', 'GQ', 'SZ', 'GA', 'GN', 'KG', 'LA', 'MO', 'MR', 'MN', 'NP', 'RW', 'TG', 'UZ', 'ZW', 'BJ', 'MG', 'MU', 'MZ', 'AO', 'CI', 'DJ', 'ZM', 'CD', 'CG', 'IQ', 'LY', 'TJ', 'VE', 'ET', 'XK']
 
 class Music(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -44,6 +57,11 @@ class Music(commands.Cog):
                 conf.getfloat("GuessVoteSkipPercent", 0.0) / 100
             )
             self.guess_lenient: bool = conf.getboolean("GuessLenient", fallback=True)
+            self.temp_folder: Path = Path(conf.get("TempPath", fallback="/tmp")).absolute()
+            if not Path.exists(self.temp_folder):
+                Path.mkdir(self.temp_folder)
+            if not os.access(self.temp_folder, os.W_OK):
+                log.error(f"Cannot access ${self.temp_folder}")
         else:
             self.root_path = "/media/Moosic"
             self.show_song_status = False
@@ -53,11 +71,25 @@ class Music(commands.Cog):
         self.voice_state = VoiceState(
             self.bot, guess_vote_skip_percent=self.guess_vote_skip_percent
         )
+
+        try:
+            conf = config.config["spotify"]
+            client_id=conf["ClientId"]
+            client_secret=conf["ClientSecret"]
+            if client_id is None or client_secret is None:
+                log.info("Spotify not configured, skipping Spotify support.")
+                bot.remove_command("spotifyadd")
+            else:
+                self.spotify_client = spotipy.Spotify(auth_manager=SpotifyClientCredentials(client_id=client_id, client_secret=client_secret))
+        except Exception as e:
+            log.error("Error authenticating with Spotify, skipping Spotify support.")
+            log.debug(e)
+            bot.remove_command("spotifyadd")
         # process all songs
         self.get_files()
 
     def get_files(self):
-        self.songs: list[Song] = []
+        self.songs: list[Song] = [] # TODO: Decouple from self.songs
 
         log.info(f"Searching for songs from {self.root_path}.")
         ignored: int = 0
@@ -240,14 +272,24 @@ class Music(commands.Cog):
             return
 
         try:
-            await self.get_voice_state(ctx)
+            asyncio.run(self.get_voice_state(ctx))
         except AttributeError:
             print(traceback.format_exc())
             await ctx.send("You are not in a voice channel.")
             return
+        except Exception as e:
+            log.error(f"Error connecting to voice channel: {e}")
+            await ctx.send("Error connecting to voice channel.")
+            return
 
         if return_to_function:
             return sources
+
+        await asyncio.wait_for(self.voice_state.ready.wait(), timeout=5)
+
+        if not self.voice_state.audio_running:
+            log.error("Audio player did not signal readiness, stopping playback.")
+            return None
 
         for s in sources:
             await self.voice_state.add(s, lyrics=show_lyrics)
@@ -382,6 +424,102 @@ class Music(commands.Cog):
         await ctx.send(
             f"Added {len(self.playlist_map[name])} songs from '{name}' to the queue."
         )
+
+    @commands.command("spotifyadd")
+    async def add_spotify(self, ctx: commands.Context, query: str = "", max_results: int = 50):
+        try:
+            await self.get_voice_state(ctx)
+        except AttributeError:
+            print(traceback.format_exc())
+            await ctx.send("You are not in a voice channel.")
+            return
+        if query == "" or query is None:
+            await ctx.send("Please provide a playlist name.")
+            return
+        if self.spotify_client is None:
+            log.error("Spotify client not configured")
+            await ctx.send("Spotify client not configured")
+            return
+
+        query_id: str = re.search(r'([A-Za-z0-9]{22})', query).group(1)
+
+        spotify_tracks = []
+        # checking the uri type by post call and exception branching... cursed af
+        try:
+            spotify_tracks.extend(i["track"] for i in self.spotify_client.playlist_items(query_id, market=SPOTIFY_MARKETS, limit=max_results)["items"])
+        except Exception as e:
+            log.debug(f"Error fetching Spotify playlist: {e}")
+
+        try:
+           spotify_tracks.extend(i for i in self.spotify_client.tracks([query_id], market=SPOTIFY_MARKETS)["tracks"] if i is not None)
+        except Exception as e:
+            log.debug(f"Error fetching Spotify tracks: {e}")
+
+        try:
+            spotify_tracks.extend(self.spotify_client.album_tracks(query_id, market=SPOTIFY_MARKETS, limit=max_results)["items"])
+        except Exception as e:
+            log.debug(f"Error fetching Spotify album: {e}")
+
+
+        if len(spotify_tracks) == 0 :
+            await ctx.send("Spotify playlist not found")
+            return
+        log.debug(f"Spotify playlist: {spotify_tracks}")
+
+        for track in spotify_tracks:
+            if track is None:
+                continue
+            name = track["name"]
+            artist = track["artists"][0]["name"]
+
+            try:
+                youtube_result = YoutubeSearch(
+                    f"{name} {artist}", max_results=1
+                ).to_dict()
+                log.debug(f"Youtube search result: {youtube_result}")
+                log.info(f"Found video id {youtube_result[0]['id']} for {name} - {artist}")
+
+                if (youtube_result is None
+                    or len(youtube_result) == 0
+                    or youtube_result[0]["id"] is None):
+                    log.warn(f"Youtube search failed for {name} - {artist}")
+                    continue
+            except Exception as e:
+                log.error(f"Error searching for {name} - {artist}: {e}")
+                continue
+
+            def download_track(callback: Callable[[SongStatus], None]):
+                name = track["name"]
+                artist = track["artists"][0]["name"]
+                video_id = youtube_result[0]['id']
+                log.info(f"Downloading song {name}")
+
+                yt_opts = {
+                    "o": f"{str(self.temp_folder)}/{video_id}.%(ext)s",
+                    "verbose": True
+                }
+                log.debug(f"Youtube options: {yt_opts}")
+                status_code = 1
+                try:
+                    with yt_dlp.YoutubeDL(yt_opts) as ydl:
+                        status_code = ydl.download(video_id)
+                except Exception as e:
+                    log.error(f"Error downloading with exception {e}")
+                    status_code = 1
+
+                if status_code > 0:
+                    log.warn(f"Youtube download failed for {name} - {artist}")
+                else:
+                    log.info(f"Downloaded to {self.temp_folder}/{video_id} for {name} - {artist}")
+
+                callback(SongStatus.AVAILABLE if status_code == 0 else SongStatus.NOT_FOUND)
+
+            song = Song(os.path.join(self.temp_folder, youtube_result[0]["id"]), log,
+                        status=SongStatus.NOT_AVAILABLE, download_task=download_track)
+            song.set_title(name)
+            song.artist = artist
+
+            await self.voice_state.add(song, False, False)
 
 
 async def setup(bot: commands.Bot):

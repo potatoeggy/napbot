@@ -9,6 +9,9 @@ dependencies = [
     "discord-py[voice]>=2.5.2",
     "opencc>=1.1.9",
     "regex>=2024.11.6",
+    "spotipy>=2.25.1",
+    "youtube-search>=2.1.2",
+    "yt-dlp>=2025.4.30",
 ]
 
 [project.scripts]
