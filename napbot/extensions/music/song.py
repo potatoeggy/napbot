@@ -112,6 +112,7 @@ class Song:
         self.status: SongStatus = status
         self.song_position = Song.song_count
         self.external_id = None
+        self.log = log
         Song.song_count += 1
 
         if self.status == SongStatus.NOT_AVAILABLE:
@@ -134,21 +135,18 @@ class Song:
                 )
 
                 if art_frame is not None:
-                    self.art = art_frame.image_data
-                    if pillow_installed:
-                        with io.BytesIO(self.art) as imagedata:
-                            image = (
-                                Image.open(imagedata)
-                                .convert("RGB")
-                                .resize((1, 1), resample=0)
-                            )
-                            self.dominant_colour = discord.Colour.from_rgb(
-                                *image.getpixel((0, 0))
-                            )
+                    self.set_art(art_frame.image_data)
 
         # parse lyrics
+        self.get_subtitles()
+
+        self.title_slugified = (
+            title_slugify(self.title) if self.title else self.base_name
+        )
+
+    def get_subtitles(self):
         try:
-            lrc_file = os.path.splitext(audio_path)[0] + ".lrc"
+            lrc_file = os.path.splitext(self.path)[0] + ".lrc"
             with open(lrc_file, "r") as file:
                 data = file.read().split("\n")
         except IOError:
@@ -156,9 +154,8 @@ class Song:
             data = []
         except UnicodeDecodeError:
             # invalid LRC
-            log.warn(f"{self.get_name()}'s lyrics are not in UTF-8.")
+            self.log.warn(f"{self.get_name()}'s lyrics are not in UTF-8.")
             data = []
-
         for s in data:
             try:
                 ts_end_index = s.index("]")
@@ -167,7 +164,7 @@ class Song:
                     x * int(t)
                     for x, t in zip([0.001, 1, 60], reversed(re.split(r":|\.", ts)))
                 )
-                lyric = s[ts_end_index + 1 :]
+                lyric = s[ts_end_index + 1:]
                 if not lyric.isspace() and lyric != "":
                     self.lyrics.append(lyric)
                     self.lyric_timestamps.append(ts_seconds)
@@ -178,9 +175,18 @@ class Song:
                 # current line does not have a timestamp
                 pass
 
-        self.title_slugified = (
-            title_slugify(self.title) if self.title else self.base_name
-        )
+    def set_art(self, image_data: bytes):
+        self.art = image_data
+        if pillow_installed:
+            with io.BytesIO(self.art) as imagedata:
+                image = (
+                    Image.open(imagedata)
+                    .convert("RGB")
+                    .resize((1, 1), resample=0)
+                )
+                self.dominant_colour = discord.Colour.from_rgb(
+                    *image.getpixel((0, 0))
+                )
 
     def get_name(self):
         if not (self.title and self.artist):
@@ -229,42 +235,81 @@ class Song:
         path = Path(self.path)
         folder = path.parent
         video_id = self.external_id
+        thumbnail_path = path.with_suffix(".jpg")
+
+
+        if path.exists():
+            log.info(f"File already exists for {name} - {artist}")
+            self.status = SongStatus.AVAILABLE
+
+            try:
+                with Image.open(thumbnail_path) as image, io.BytesIO() as output:
+                    image.convert("RGB").save(output, format="JPEG")
+                    self.set_art(output.getvalue())
+
+                    self.get_subtitles()
+            except Exception as error:
+                log.warn(f"Error setting thumbnail {thumbnail_path} and subtitles, with {remove_error}")
+
+
+            reinsert_queue()
+            return
 
         try:
             current_downloaded = [f for f in os.listdir(folder) if f.endswith(".mp3")]
             if len(current_downloaded) >= config.config["music"].getint("MaxDownloadQueue", 5) * 2:
                 current_downloaded.sort(key=lambda x: os.path.getctime(folder / x))
                 for oldest_song in current_downloaded: # remove the oldest song if not in queue until under twice the download limit
-                    if not queue or all(item[0] != oldest_song for item in queue):
-                        log.info(f"Removing oldest song {oldest_song} from cache")
-                        os.remove(folder / oldest_song)
+                    if not queue or all(item[0] != oldest_song for item in queue) or queue.last_item != oldest_song:
+                        try:
+                            os.remove(folder / oldest_song)
+                            if path.with_suffix(".jpg").exists():
+                                os.remove(folder / oldest_song.with_suffix(".jpg"))
+                            if path.with_suffix(".lrc").exists():
+                                os.remove(folder / oldest_song.with_suffix(".lrc"))
+
+                            log.info(f"Removed oldest song {oldest_song} from cache")
+                        except PermissionError as remove_error:
+                            log.warn(f"Error removing {oldest_song}, in use: {remove_error}")
+
                         current_downloaded = [f for f in os.listdir(folder) if f.endswith(".mp3")]
                         if len(current_downloaded) < config.config["music"].getint("MaxDownloadQueue", 5) * 2:
                             break
 
                 if len(current_downloaded) >= config.config["music"].getint("MaxDownloadQueue", 5) * 2:
                     log.info(f"Cache is full, wait for other downloads before starting download for {name} - {artist}")
-                    status = SongStatus.NOT_AVAILABLE
+                    self.status = SongStatus.NOT_AVAILABLE
                     return
         except Exception as cacheError:
             log.error(f"Error pruning cache: {cacheError}")
-            status = SongStatus.NOT_AVAILABLE
-            return
-        if path.exists():
-            log.info(f"File already exists for {name} - {artist}")
-            self.status = SongStatus.AVAILABLE
-            reinsert_queue()
+            self.status = SongStatus.NOT_AVAILABLE
             return
 
         log.info(f"Downloading song {name}")
 
-        yt_opts = {
-            "outtmpl": {'default': f"{path}"},
-            "verbose": True,
-            'noplaylist': True,
-            "format": "bestaudio",
-            "limit_rate": "1M"
-        }
+        yt_opts = {'extract_flat': 'discard_in_playlist',
+                   'final_ext': 'mp3',
+                   'format': 'bestaudio/best',
+                   'fragment_retries': 10,
+                   'ignoreerrors': 'only_download',
+                   'noplaylist': True,
+                   'outtmpl': {'default': f'{folder}/%(id)s.%(ext)s'},
+                   'postprocessors': [{'format': 'lrc',
+                                       'key': 'FFmpegSubtitlesConvertor',
+                                       'when': 'before_dl'},
+                                      {'format': 'jpg',
+                                       'key': 'FFmpegThumbnailsConvertor',
+                                       'when': 'before_dl'},
+                                      {'key': 'FFmpegExtractAudio',
+                                       'nopostoverwrites': False,
+                                       'preferredcodec': 'mp3',
+                                       'preferredquality': '5'},
+                                      {'key': 'FFmpegConcat',
+                                       'only_multi_video': True,
+                                       'when': 'playlist'}],
+                   'writesubtitles': True,
+                   'subtitleslangs': ['.*orig', 'en'],
+                   'writethumbnail': True}
         log.debug(f"Youtube options: {yt_opts}")
         status_code = 1
         try:
@@ -279,6 +324,18 @@ class Song:
         else:
             log.info(f"Downloaded to {path} for {name} - {artist}")
 
+
+        try:
+            with Image.open(thumbnail_path) as image, io.BytesIO() as output:
+                image.convert("RGB").save(output, format="JPEG")
+                self.set_art(output.getvalue())
+
+                self.get_subtitles()
+        except Exception as error:
+            log.warn(f"Error setting thumbnail {thumbnail_path} and subtitles, with {remove_error}")
+
+
+
         self.status = SongStatus.AVAILABLE if status_code == 0 else SongStatus.NOT_FOUND
         reinsert_queue()
 
@@ -290,6 +347,7 @@ class SongQueue[T](asyncio.PriorityQueue[T]):
         thread_name_prefix="Downloader"
     )
     _wake_event = asyncio.Event()
+    last_item: T | None = None
 
     @overload
     def __init__(self, loop: asyncio.AbstractEventLoop, maxsize: int = 0) -> None: ...
@@ -347,6 +405,7 @@ class SongQueue[T](asyncio.PriorityQueue[T]):
     async def get_with_update(self) -> T:
         await self._wake_event.wait() # wait for a song with status AVAILABLE or LOCAL
         item = await self.get()
+        self.last_item = item
         self._onUpdate()
         return item
 
@@ -355,10 +414,13 @@ class SongQueue[T](asyncio.PriorityQueue[T]):
 
     def remove(self, index: int) -> None:
         del self._queue[index]
+
+    def remove_with_update(self, index: int) -> None:
+        self.remove(index)
         self._onUpdate()
 
     def putfirst(self, item: T) -> None:
-        task = self._onUpdate()
+        task = self._onUpdate() # TODO: original implementation of putfirst doesnt work - it won't wake waiting getters
         if task is not None: # only add the song if the task is finished downloading
             task.add_done_callback(lambda _: self._queue.appendleft(item))
         else:

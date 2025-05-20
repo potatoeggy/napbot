@@ -321,14 +321,16 @@ dependencies = [
     { name = "discord-py", extra = ["voice"] },
     { name = "opencc" },
     { name = "regex" },
-    { name = "spotipy" },
-    { name = "youtube-search" },
-    { name = "yt-dlp" },
 ]
 
 [package.optional-dependencies]
 music-dominantcolour = [
     { name = "pillow" },
+]
+music-external = [
+    { name = "spotipy" },
+    { name = "youtube-search" },
+    { name = "yt-dlp" },
 ]
 music-id3metadata = [
     { name = "eyed3" },
@@ -351,11 +353,11 @@ requires-dist = [
     { name = "opencc", specifier = ">=1.1.9" },
     { name = "pillow", marker = "extra == 'music-dominantcolour'", specifier = ">=11.1.0" },
     { name = "regex", specifier = ">=2024.11.6" },
-    { name = "spotipy", specifier = ">=2.25.1" },
-    { name = "youtube-search", specifier = ">=2.1.2" },
-    { name = "yt-dlp", specifier = ">=2025.4.30" },
+    { name = "spotipy", marker = "extra == 'music-external'", specifier = ">=2.25.1" },
+    { name = "youtube-search", marker = "extra == 'music-external'", specifier = ">=2.1.2" },
+    { name = "yt-dlp", marker = "extra == 'music-external'", specifier = ">=2025.4.30" },
 ]
-provides-extras = ["music-id3metadata", "music-playlists", "music-dominantcolour"]
+provides-extras = ["music-id3metadata", "music-playlists", "music-dominantcolour", "music-external"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "types-eyed3", specifier = ">=0.9.7.20250306" }]

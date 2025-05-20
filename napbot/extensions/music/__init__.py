@@ -87,7 +87,7 @@ class Music(commands.Cog):
             log.debug(e)
             bot.remove_command("spotifyadd")
         # process all songs
-        # self.get_files() TODO: Remove
+        self.get_files()
 
     def get_files(self):
         self.songs: list[Song] = []
@@ -273,7 +273,7 @@ class Music(commands.Cog):
             return
 
         try:
-            asyncio.run(self.get_voice_state(ctx))
+            await self.get_voice_state(ctx)
         except AttributeError:
             print(traceback.format_exc())
             await ctx.send("You are not in a voice channel.")
@@ -487,7 +487,8 @@ class Music(commands.Cog):
         if len(spotify_tracks) == 0 :
             await ctx.send("Spotify playlist not found")
             return
-        log.debug(f"Spotify playlist: {spotify_tracks}")
+        log.debug(f"Spotify playlist found: {spotify_tracks}")
+        log.info(f"Found {len(spotify_tracks)} tracks in Spotify playlist")
 
         for track in spotify_tracks:
             if track is None:

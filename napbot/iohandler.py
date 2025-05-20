@@ -23,6 +23,9 @@ class Logger:
     def info(self, msg: Any):
         self._log(msg, Logger.INFO_LEVEL)
 
+    def warning(self, msg: Any): # for compatibility with the yt-dlp logger
+        self._log(msg, Logger.WARN_LEVEL)
+
     def warn(self, msg: Any):
         self._log(msg, Logger.WARN_LEVEL)
 

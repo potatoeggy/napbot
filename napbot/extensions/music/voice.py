@@ -7,6 +7,7 @@ from typing import Literal
 import discord
 from async_timeout import timeout
 from discord.ext import commands
+from nacl.bindings import crypto_secretstream_xchacha20poly1305_state
 
 from .discord import LyricPlayer, MusicPanel
 from .song import Song, SongQueue, SongStatus
@@ -36,7 +37,8 @@ class VoiceState:
         self.start_pos: Literal["RANDOM", "CHORUS", "BEGINNING"] = "BEGINNING"
 
     def __del__(self):
-        self.player.cancel()
+        if self.player:
+            self.player.cancel()
 
     def __bool__(self):
         return bool(self.vc)
@@ -59,7 +61,7 @@ class VoiceState:
             self.queue.putfirst((song, lyrics))
 
     def remove(self, num: int):
-        self.queue.remove(num - 1)
+        self.queue.remove_with_update(num - 1)
 
     async def connect(self, ctx: BotContext):
         channel = ctx.author.voice.channel
@@ -95,6 +97,9 @@ class VoiceState:
 
             if song.status == SongStatus.NOT_FOUND:
                 log.info(f"{song.title} not found, skipping.")
+                await self.ctx.send(
+                    f"Could not find **{song.title}**. Skipping to the next song."
+                )
                 continue
 
             start_time = 0
