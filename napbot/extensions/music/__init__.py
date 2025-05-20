@@ -86,10 +86,10 @@ class Music(commands.Cog):
             log.debug(e)
             bot.remove_command("spotifyadd")
         # process all songs
-        self.get_files()
+        # self.get_files() TODO: Remove
 
     def get_files(self):
-        self.songs: list[Song] = [] # TODO: Decouple from self.songs
+        self.songs: list[Song] = []
 
         log.info(f"Searching for songs from {self.root_path}.")
         ignored: int = 0
@@ -384,7 +384,16 @@ class Music(commands.Cog):
         offset = page * ITEMS_PER_PAGE
         embed = discord.Embed(title="Queue", description="")
         for i, s in enumerate(self.voice_state.queue[offset : offset + ITEMS_PER_PAGE]):
-            embed.description += f"{offset + i + 1}. {s[0].get_name()}{' [LRC]' if s[0].lyrics else ''}\n"
+            status_icon = "📀"
+            if s[0].status == SongStatus.NOT_AVAILABLE:
+                status_icon = "☁️"
+            elif s[0].status == SongStatus.DOWNLOADING:
+                status_icon = "⏳"
+            elif s[0].status == SongStatus.AVAILABLE:
+                status_icon = "✅"
+            else :
+                status_icon = "❌"
+            embed.description += f"{offset + i + 1}. {s[0].get_name()}{' [LRC]' if s[0].lyrics else ''}{status_icon}\n"
         embed.description += f"\nPage {page + 1} of {math.ceil(len(self.voice_state.queue) / ITEMS_PER_PAGE)}"
         await ctx.send(embed=embed)
 
@@ -442,21 +451,34 @@ class Music(commands.Cog):
             return
 
         query_id: str = re.search(r'([A-Za-z0-9]{22})', query).group(1)
+        await self._queue_spotify_internal(ctx, query_id, max_results)
 
+    async def _queue_spotify_internal(self, ctx: commands.Context, query_id: str, max_results: int):
         spotify_tracks = []
-        # checking the uri type by post call and exception branching... cursed af
+        # checking the uri type by api call and exception branching... cursed af
         try:
-            spotify_tracks.extend(i["track"] for i in self.spotify_client.playlist_items(query_id, market=SPOTIFY_MARKETS, limit=max_results)["items"])
+            spotify_tracks.extend(
+                i["track"] for i in (await self.bot.loop.run_in_executor(
+                    None,
+                    lambda: self.spotify_client.playlist_items(query_id, market=SPOTIFY_MARKETS, limit=max_results)
+                ))["items"])
         except Exception as e:
             log.debug(f"Error fetching Spotify playlist: {e}")
 
         try:
-           spotify_tracks.extend(i for i in self.spotify_client.tracks([query_id], market=SPOTIFY_MARKETS)["tracks"] if i is not None)
+            spotify_tracks.extend(
+                i for i in (await self.bot.loop.run_in_executor(
+                    None,
+                    lambda: self.spotify_client.tracks([query_id], market=SPOTIFY_MARKETS)
+                ))["tracks"] if i is not None)
         except Exception as e:
             log.debug(f"Error fetching Spotify tracks: {e}")
 
         try:
-            spotify_tracks.extend(self.spotify_client.album_tracks(query_id, market=SPOTIFY_MARKETS, limit=max_results)["items"])
+            spotify_tracks.extend((await self.bot.loop.run_in_executor(
+                None,
+                lambda: self.spotify_client.album_tracks(query_id, market=SPOTIFY_MARKETS, limit=max_results)
+            ))["items"])
         except Exception as e:
             log.debug(f"Error fetching Spotify album: {e}")
 
@@ -473,9 +495,8 @@ class Music(commands.Cog):
             artist = track["artists"][0]["name"]
 
             try:
-                youtube_result = YoutubeSearch(
-                    f"{name} {artist}", max_results=1
-                ).to_dict()
+                youtube_result = (await self.bot.loop.run_in_executor(None,
+                    lambda: YoutubeSearch(f"{name} {artist}", max_results=1))).to_dict()
                 log.debug(f"Youtube search result: {youtube_result}")
                 log.info(f"Found video id {youtube_result[0]['id']} for {name} - {artist}")
 
@@ -488,15 +509,50 @@ class Music(commands.Cog):
                 log.error(f"Error searching for {name} - {artist}: {e}")
                 continue
 
-            def download_track(callback: Callable[[SongStatus], None]):
+            def download_track(self_ref: Tuple[Song, bool]):
+                song = self_ref[0]
+                lyric = self_ref[1]
+                reinsert_queue = lambda: (
+                    self.voice_state.remove(next((i for i, item in enumerate(self.voice_state.queue) if item == self_ref), -1)),
+                    self.voice_state.queue.insert(0, self_ref))
+
+                try:
+                    current_downloaded = [f for f in os.listdir(self.temp_folder) if f.endswith(".mp3")]
+                    if len(current_downloaded) >= config.config["music"].getint("MaxDownloadQueue", 5) * 2:
+                        current_downloaded.sort(key=lambda x: os.path.getctime(self.temp_folder / x))
+                        for oldest_song in current_downloaded:
+                            if not self.voice_state.queue or all(item[0] != oldest_song for item in self.voice_state.queue):
+                                log.info(f"Removing oldest song {oldest_song} from cache")
+                                os.remove(self.temp_folder / oldest_song) # remove the oldest song if not in queue (theoretically should be first song)
+                                current_downloaded = [f for f in os.listdir(self.temp_folder) if f.endswith(".mp3")]
+                                if len(current_downloaded) < config.config["music"].getint("MaxDownloadQueue", 5) * 2:
+                                    break
+
+                        if len(current_downloaded) >= config.config["music"].getint("MaxDownloadQueue", 5) * 2:
+                            song.status = SongStatus.NOT_AVAILABLE
+                            return
+                except Exception as cacheError:
+                    log.error(f"Error pruning cache: {cacheError}")
+                    song.status = SongStatus.NOT_AVAILABLE
+                    return
+
                 name = track["name"]
                 artist = track["artists"][0]["name"]
                 video_id = youtube_result[0]['id']
+
+                if (self.temp_folder / f"{video_id}.mp3").exists():
+                    log.info(f"File already exists for {name} - {artist}")
+                    song.status = SongStatus.AVAILABLE
+                    return
+
                 log.info(f"Downloading song {name}")
 
                 yt_opts = {
-                    "o": f"{str(self.temp_folder)}/{video_id}.%(ext)s",
-                    "verbose": True
+                    "outtmpl": {'default': f"{str(self.temp_folder)}/{video_id}.mp3"},
+                    "verbose": True,
+                    'noplaylist': True,
+                    "format": "bestaudio",
+                    "limit_rate": "1M"
                 }
                 log.debug(f"Youtube options: {yt_opts}")
                 status_code = 1
@@ -510,11 +566,11 @@ class Music(commands.Cog):
                 if status_code > 0:
                     log.warn(f"Youtube download failed for {name} - {artist}")
                 else:
-                    log.info(f"Downloaded to {self.temp_folder}/{video_id} for {name} - {artist}")
+                    log.info(f"Downloaded to {self.temp_folder}/{video_id}.mp3 for {name} - {artist}")
 
                 callback(SongStatus.AVAILABLE if status_code == 0 else SongStatus.NOT_FOUND)
 
-            song = Song(os.path.join(self.temp_folder, youtube_result[0]["id"]), log,
+            song = Song(os.path.join(self.temp_folder, youtube_result[0]["id"] + ".mp3"), log,
                         status=SongStatus.NOT_AVAILABLE, download_task=download_track)
             song.set_title(name)
             song.artist = artist

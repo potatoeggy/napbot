@@ -51,11 +51,17 @@ _whitespace = regex.compile(r"\s+")
 cc = OpenCC("t2s.json")
 
 class SongStatus(Enum):
-    LOCAL = 0,
-    AVAILABLE = 1,
-    NOT_FOUND = 2,
-    NOT_AVAILABLE = 3,
-    DOWNLOADING = 4
+    """
+    Status of song's availability
+    Resolved states LOCAL, AVAILABLE, NOT_FOUND have highest priority
+    DOWNLOADING has second priority to ensure new downloads are not started with pending downloads
+    NOT_AVAILABLE has lowest priority
+    """
+    LOCAL = 0
+    AVAILABLE = 1
+    NOT_FOUND = 2
+    DOWNLOADING = 3
+    NOT_AVAILABLE = 4
 
 
 def title_slugify(title: str) -> str:
@@ -88,7 +94,7 @@ def title_slugify(title: str) -> str:
 class Song:
     song_count = 0
     def __init__(self, audio_path: str, log: Logger, status: SongStatus = SongStatus.LOCAL,
-                 download_task: Callable[[Callable], None] | None = None):
+                 download_task: Callable[Tuple[Song, bool], None] | None = None):
         self.base_name = os.path.splitext(os.path.basename(audio_path))[0]
         self.path = audio_path
         self.path_lower = audio_path.lower()
@@ -101,7 +107,7 @@ class Song:
         self.lyric_timestamps: list[float] = []
         self.dominant_colour: discord.Color | None = None
         self.status: SongStatus = status
-        self.download_task = lambda: download_task(lambda status: setattr(self, "status", status))
+        self.download_task = download_task
         self.song_position = Song.song_count
         Song.song_count += 1
 
@@ -194,11 +200,11 @@ class Song:
         if not isinstance(other, Song):
             return NotImplemented
 
-        if self.status == SongStatus.DOWNLOADING:
-            return False
-        return self.song_position < other.song_position
+        if self.status != other.status and self.status.value >= SongStatus.DOWNLOADING.value:
+            return self.status.value < other.status.value
+        return self.song_position < other.song_position # other statuses compare by position
 
-class SongQueue[T](asyncio.Queue[T]):
+class SongQueue[T](asyncio.PriorityQueue[T]):
     _queue: deque[T]
     _maxDownloadSize = config.config["music"].getint("MaxDownloadQueue", 5)
     _download_executor = concurrent.futures.ThreadPoolExecutor(
@@ -226,17 +232,25 @@ class SongQueue[T](asyncio.Queue[T]):
         if not self._queue or not isinstance(self._queue[0], tuple):
             return None
 
-        last_task = None
-        for song, _ in list(self._queue)[:self._maxDownloadSize]:
-            if isinstance(song, Song) and song.status == SongStatus.NOT_AVAILABLE:
-                song.status = SongStatus.DOWNLOADING
-                last_task = self._download_executor.submit(song.download_task)
+        try:
+            last_task = None
+            for song, lyric in list(self._queue)[:self._maxDownloadSize]:
+                if isinstance(song, Song) and song.status == SongStatus.NOT_AVAILABLE:
+                    song.status = SongStatus.DOWNLOADING
+                    last_task = self._download_executor.submit(song.download_task((song, lyric)))
+        except Exception as e:
+            log.error(f"Error in _onUpdate: {e}")
+            return None
 
         return last_task
 
     @override
     def put_nowait(self, item: T) -> None:
-        super().put_nowait(item)
+        try:
+            super().put_nowait(item)
+        except Exception as e:
+            log.error(f"Error in put_nowait: {e}")
+            return
         self._onUpdate()
 
     async def get_with_update(self) -> T:

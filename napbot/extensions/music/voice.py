@@ -12,7 +12,7 @@ from idna import valid_contextj
 
 from .discord import LyricPlayer, MusicPanel
 from .song import Song, SongQueue, SongStatus
-from ...state import config
+from ...state import config, log
 from ...utils import BotContext
 
 
@@ -79,6 +79,7 @@ class VoiceState:
 
     async def audio_player(self):
         downloading_songs = 0
+        self.ready.set()
         while True:
             try:
                 async with timeout(180): # vc should be started before audio player
@@ -86,7 +87,6 @@ class VoiceState:
                         self.audio_running = False
                         return # else it is a user interrupt and we exit
                     self.audio_running = True
-                    self.ready.set()
                     self.current = await self.queue.get_with_update()
             except asyncio.TimeoutError:
                 self.bot.loop.create_task(self.stop())
@@ -94,20 +94,22 @@ class VoiceState:
                 return
 
             song, show_lyrics = self.current
-            # TODO: need a better heuristic, if the entire queue was external, this would loop the entire queue (expensive)
+
             if song.status == SongStatus.NOT_AVAILABLE or song.status == SongStatus.DOWNLOADING:
-                print("Song is not available or downloading, adding back into queue.")
-                if downloading_songs == len(self.queue):
-                    while song.status != SongStatus.AVAILABLE or song.status != SongStatus.NOT_FOUND:
-                        await asyncio.sleep(0.5)
+                if downloading_songs >= config.config["music"].getint("MaxDownloadQueue", 5):
+                    log.info(f"{song.title} is not available, iteration limits reached, waiting for download to finish.")
+                    while song.status != SongStatus.AVAILABLE and song.status != SongStatus.NOT_FOUND:
+                        await asyncio.sleep(0.5) # all songs in download queue are downloading
                 else:
-                    await self.queue.put(song)
+                    log.info(f"{song.title} is not available or downloading, adding back into queue.")
+                    await self.queue.put(self.current) # shuffle download queue to bubble local/available songs up
                     downloading_songs += 1
                 continue
             if song.status == SongStatus.NOT_FOUND:
-                print("Song not found, skipping.")
+                log.info(f"{song.title} not found, skipping.")
                 continue
 
+            downloading_songs = 0 # reset counter, loop the entire download queue again
             start_time = 0
             if self.guess_mode:
                 if self.start_pos == "RANDOM":
