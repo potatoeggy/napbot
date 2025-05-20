@@ -9,9 +9,13 @@ import re
 import os
 from ctypes.wintypes import HTASK
 from concurrent.futures import Future
+from idlelib.pathbrowser import PathBrowser
 from importlib.metadata import always_iterable
 from operator import itemgetter
+from types import new_class
 from typing import overload, Callable, override, Tuple
+from pathlib import Path
+import yt_dlp
 
 from collections.abc import Iterator
 
@@ -93,8 +97,7 @@ def title_slugify(title: str) -> str:
 
 class Song:
     song_count = 0
-    def __init__(self, audio_path: str, log: Logger, status: SongStatus = SongStatus.LOCAL,
-                 download_task: Callable[Tuple[Song, bool], None] | None = None):
+    def __init__(self, audio_path: str, log: Logger, status: SongStatus = SongStatus.LOCAL):
         self.base_name = os.path.splitext(os.path.basename(audio_path))[0]
         self.path = audio_path
         self.path_lower = audio_path.lower()
@@ -107,8 +110,8 @@ class Song:
         self.lyric_timestamps: list[float] = []
         self.dominant_colour: discord.Color | None = None
         self.status: SongStatus = status
-        self.download_task = download_task
         self.song_position = Song.song_count
+        self.external_id = None
         Song.song_count += 1
 
         if self.status == SongStatus.NOT_AVAILABLE:
@@ -191,6 +194,12 @@ class Song:
         self.title = title
         self.title_slugified = title_slugify(title)
 
+    def set_external_id(self, external_id: str):
+        """
+        Set the external ID of the song. Usually youtube video id
+        """
+        self.external_id = external_id
+
     def __str__(self):
         if not (self.title and self.artist):
             return self.base_name
@@ -204,6 +213,75 @@ class Song:
             return self.status.value < other.status.value
         return self.song_position < other.song_position # other statuses compare by position
 
+    def download_track(self, lyric: bool, queue: 'SongQueue'):
+        song_tuple = (self, lyric)
+        async def _reinsert_queue(song_tuple: Tuple['Song', bool]):
+            for (i, item) in enumerate(queue):
+                if item == song_tuple:
+                    break
+            queue.remove(i)
+            await queue.put(song_tuple)
+
+        reinsert_queue = lambda: asyncio.run_coroutine_threadsafe(_reinsert_queue(song_tuple), queue.loop)
+
+        name = self.get_name()
+        artist = self.artist
+        path = Path(self.path)
+        folder = path.parent
+        video_id = self.external_id
+
+        try:
+            current_downloaded = [f for f in os.listdir(folder) if f.endswith(".mp3")]
+            if len(current_downloaded) >= config.config["music"].getint("MaxDownloadQueue", 5) * 2:
+                current_downloaded.sort(key=lambda x: os.path.getctime(folder / x))
+                for oldest_song in current_downloaded: # remove the oldest song if not in queue until under twice the download limit
+                    if not queue or all(item[0] != oldest_song for item in queue):
+                        log.info(f"Removing oldest song {oldest_song} from cache")
+                        os.remove(folder / oldest_song)
+                        current_downloaded = [f for f in os.listdir(folder) if f.endswith(".mp3")]
+                        if len(current_downloaded) < config.config["music"].getint("MaxDownloadQueue", 5) * 2:
+                            break
+
+                if len(current_downloaded) >= config.config["music"].getint("MaxDownloadQueue", 5) * 2:
+                    log.info(f"Cache is full, wait for other downloads before starting download for {name} - {artist}")
+                    status = SongStatus.NOT_AVAILABLE
+                    return
+        except Exception as cacheError:
+            log.error(f"Error pruning cache: {cacheError}")
+            status = SongStatus.NOT_AVAILABLE
+            return
+        if path.exists():
+            log.info(f"File already exists for {name} - {artist}")
+            self.status = SongStatus.AVAILABLE
+            reinsert_queue()
+            return
+
+        log.info(f"Downloading song {name}")
+
+        yt_opts = {
+            "outtmpl": {'default': f"{path}"},
+            "verbose": True,
+            'noplaylist': True,
+            "format": "bestaudio",
+            "limit_rate": "1M"
+        }
+        log.debug(f"Youtube options: {yt_opts}")
+        status_code = 1
+        try:
+            with yt_dlp.YoutubeDL(yt_opts) as ydl:
+                status_code = ydl.download(video_id)
+        except Exception as e:
+            log.error(f"Error downloading with exception {e}")
+            status_code = 1
+
+        if status_code > 0:
+            log.warn(f"Youtube download failed for {name} - {artist}")
+        else:
+            log.info(f"Downloaded to {path} for {name} - {artist}")
+
+        self.status = SongStatus.AVAILABLE if status_code == 0 else SongStatus.NOT_FOUND
+        reinsert_queue()
+
 class SongQueue[T](asyncio.PriorityQueue[T]):
     _queue: deque[T]
     _maxDownloadSize = config.config["music"].getint("MaxDownloadQueue", 5)
@@ -211,6 +289,13 @@ class SongQueue[T](asyncio.PriorityQueue[T]):
         max_workers=_maxDownloadSize,
         thread_name_prefix="Downloader"
     )
+    _wake_event = asyncio.Event()
+
+    @overload
+    def __init__(self, loop: asyncio.AbstractEventLoop, maxsize: int = 0) -> None: ...
+    def __init__(self, loop: asyncio.AbstractEventLoop, maxsize: int = 0) -> None:
+        super().__init__(maxsize)
+        self.loop = loop
 
     @overload
     def __getitem__(self, item: int) -> T: ...
@@ -231,13 +316,19 @@ class SongQueue[T](asyncio.PriorityQueue[T]):
     def _onUpdate(self) -> Future | None:
         if not self._queue or not isinstance(self._queue[0], tuple):
             return None
-
+        no_available_songs = True
+        last_task = None
         try:
-            last_task = None
             for song, lyric in list(self._queue)[:self._maxDownloadSize]:
                 if isinstance(song, Song) and song.status == SongStatus.NOT_AVAILABLE:
                     song.status = SongStatus.DOWNLOADING
-                    last_task = self._download_executor.submit(song.download_task((song, lyric)))
+                    last_task = self._download_executor.submit(song.download_track, lyric, self)
+                elif isinstance(song, Song) and (song.status == SongStatus.AVAILABLE or song.status == SongStatus.LOCAL):
+                    self._wake_event.set()
+                    no_available_songs = False
+
+            if no_available_songs:
+                self._wake_event.clear()
         except Exception as e:
             log.error(f"Error in _onUpdate: {e}")
             return None
@@ -254,6 +345,7 @@ class SongQueue[T](asyncio.PriorityQueue[T]):
         self._onUpdate()
 
     async def get_with_update(self) -> T:
+        await self._wake_event.wait() # wait for a song with status AVAILABLE or LOCAL
         item = await self.get()
         self._onUpdate()
         return item

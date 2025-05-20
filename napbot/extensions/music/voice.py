@@ -7,8 +7,6 @@ from typing import Literal
 import discord
 from async_timeout import timeout
 from discord.ext import commands
-from discord.player import AudioPlayer
-from idna import valid_contextj
 
 from .discord import LyricPlayer, MusicPanel
 from .song import Song, SongQueue, SongStatus
@@ -24,7 +22,7 @@ class VoiceState:
         guess_vote_skip_percent: float = 0.0,
     ):
         self.bot = bot
-        self.queue = SongQueue[tuple[Song, bool]]()
+        self.queue = SongQueue[tuple[Song, bool]](self.bot.loop)
         self.current = None
         self.loop = asyncio.get_event_loop()
         self.ready = asyncio.Event()
@@ -54,6 +52,7 @@ class VoiceState:
             self.vc.stop()
 
     async def add(self, song: Song, right_away: bool = False, lyrics: bool = True):
+        log.info(f"Added song to queue: {song.title}")
         if not right_away:
             await self.queue.put((song, lyrics))
         else:
@@ -78,7 +77,6 @@ class VoiceState:
 
 
     async def audio_player(self):
-        downloading_songs = 0
         self.ready.set()
         while True:
             try:
@@ -95,21 +93,10 @@ class VoiceState:
 
             song, show_lyrics = self.current
 
-            if song.status == SongStatus.NOT_AVAILABLE or song.status == SongStatus.DOWNLOADING:
-                if downloading_songs >= config.config["music"].getint("MaxDownloadQueue", 5):
-                    log.info(f"{song.title} is not available, iteration limits reached, waiting for download to finish.")
-                    while song.status != SongStatus.AVAILABLE and song.status != SongStatus.NOT_FOUND:
-                        await asyncio.sleep(0.5) # all songs in download queue are downloading
-                else:
-                    log.info(f"{song.title} is not available or downloading, adding back into queue.")
-                    await self.queue.put(self.current) # shuffle download queue to bubble local/available songs up
-                    downloading_songs += 1
-                continue
             if song.status == SongStatus.NOT_FOUND:
                 log.info(f"{song.title} not found, skipping.")
                 continue
 
-            downloading_songs = 0 # reset counter, loop the entire download queue again
             start_time = 0
             if self.guess_mode:
                 if self.start_pos == "RANDOM":
