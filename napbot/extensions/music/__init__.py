@@ -1,4 +1,5 @@
 import os
+import tempfile
 from codecs import namereplace_errors
 from importlib.metadata import always_iterable
 from pathlib import Path
@@ -58,11 +59,8 @@ class Music(commands.Cog):
                 conf.getfloat("GuessVoteSkipPercent", 0.0) / 100
             )
             self.guess_lenient: bool = conf.getboolean("GuessLenient", fallback=True)
-            self.temp_folder: Path = Path(conf.get("TempPath", fallback="/tmp")).absolute()
-            if not Path.exists(self.temp_folder):
-                Path.mkdir(self.temp_folder)
-            if not os.access(self.temp_folder, os.W_OK):
-                log.error(f"Cannot access ${self.temp_folder}")
+            self.temp_folder: Path = Path(tempfile.mkdtemp(dir=Path(conf.get("TempPath", fallback="/tmp"))))
+
         else:
             self.root_path = "/media/Moosic"
             self.show_song_status = False
@@ -521,6 +519,12 @@ class Music(commands.Cog):
 
             await self.voice_state.add(song, False, False)
 
+    def __del__(self):
+        if self.temp_folder and self.temp_folder.exists():
+            for file in self.temp_folder.iterdir():
+                file.unlink()
+            self.temp_folder.rmdir()
+        log.debug("Deleted temp folder")
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(Music(bot))

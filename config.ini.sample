@@ -17,7 +17,7 @@ IgnoredPaths=/media/Moosic/Ignore
 GuessVoteSkipPercent=50
 GuessLenient=True
 Playlists=True
-TempPath=.\tmp
+TempPath=.
 MaxDownloadQueue=5
 Bitrate=320
 

@@ -19,6 +19,8 @@ import yt_dlp
 
 from collections.abc import Iterator
 
+from yt_dlp.utils import subtitles_filename
+
 from ...iohandler import Logger
 from ...state import log, config
 
@@ -144,9 +146,9 @@ class Song:
             title_slugify(self.title) if self.title else self.base_name
         )
 
-    def get_subtitles(self):
+    def get_subtitles(self, lrc_path: str = ""):
         try:
-            lrc_file = os.path.splitext(self.path)[0] + ".lrc"
+            lrc_file = lrc_path if lrc_path else os.path.splitext(self.path)[0] + ".lrc"
             with open(lrc_file, "r") as file:
                 data = file.read().split("\n")
         except IOError:
@@ -218,17 +220,20 @@ class SpotifySong(Song):
         self.external_id = external_id
         self.artist = artist
 
+    def _find_subtitle_file(folder: Path, song_id: str) -> str:
+        """
+        Find the subtitle file for the song.
+        """
+        for lrc_file in folder.glob(f"{song_id}.*.lrc"):
+            if lrc_file.is_file():
+                return lrc_file
+        return ""
 
     @override
     def download_track(self, lyric: bool, queue: 'SongQueue'):
         song_tuple = (self, lyric)
-        async def _reinsert_queue(song_tuple: Tuple['Song', bool]):
-            for (i, item) in enumerate(queue):
-                if item == song_tuple:
-                    break
-            await queue.reinsert(song_tuple)
 
-        reinsert_queue = lambda: asyncio.run_coroutine_threadsafe(_reinsert_queue(song_tuple), queue.loop)
+        reinsert_queue = lambda: asyncio.run_coroutine_threadsafe(queue.reinsert(song_tuple), queue.loop)
 
         path = Path(self.path)
         folder = path.parent
@@ -243,7 +248,7 @@ class SpotifySong(Song):
                     image.convert("RGB").save(output, format="JPEG")
                     self.set_art(output.getvalue())
 
-                    self.get_subtitles()
+                    self.get_subtitles(SpotifySong._find_subtitle_file(folder, self.external_id))
             except Exception as error:
                 log.warn(f"Error setting thumbnail {thumbnail_path} and subtitles, with {error}")
 
@@ -261,8 +266,9 @@ class SpotifySong(Song):
                             os.remove(folder / oldest_song)
                             if path.with_suffix(".jpg").exists():
                                 os.remove(folder / Path(oldest_song).with_suffix(".jpg"))
-                            if path.with_suffix(".lrc").exists():
-                                os.remove(folder / Path(oldest_song).with_suffix(".lrc"))
+                            subtitles_file = SpotifySong._find_subtitle_file(folder, Path(oldest_song).stem)
+                            if subtitles_file:
+                                os.remove(subtitles_file)
 
                             log.info(f"Removed oldest song {oldest_song} from cache")
                         except PermissionError as remove_error:
@@ -326,7 +332,7 @@ class SpotifySong(Song):
                 image.convert("RGB").save(output, format="JPEG")
                 self.set_art(output.getvalue())
 
-                self.get_subtitles()
+                self.get_subtitles(SpotifySong._find_subtitle_file(folder, self.external_id))
         except Exception as error:
             log.warn(f"Error setting thumbnail {thumbnail_path} and subtitles, with {error}")
 
@@ -406,16 +412,19 @@ class SongQueue[T](asyncio.PriorityQueue[T]):
     def clear(self) -> None:
         self._queue.clear()
 
-    async def reinsert(self, item: T) -> None:
+    async def reinsert(self, ) -> None:
         self.remove(item)
         await self.put(item)
 
     def remove(self, index: int) -> None:
         del self._queue[index]
 
-    def remove_with_update(self, index: int) -> None:
-        self.remove(index)
-        self._onUpdate()
+    def remove_with_update(self, item: T) -> None:
+        for (i, it) in enumerate(self):
+            if it == item:
+                break
+        self.remove(i)
+        self.put(item)
 
     def putfirst(self, item: T) -> None:
         task = self._onUpdate() # TODO: original implementation of putfirst doesnt work - it won't wake waiting getters
@@ -423,4 +432,7 @@ class SongQueue[T](asyncio.PriorityQueue[T]):
             task.add_done_callback(lambda _: self._queue.appendleft(item))
         else:
             self._queue.appendleft(item)
+
+    def __del__(self):
+        self._download_executor.shutdown(wait=True)
 
