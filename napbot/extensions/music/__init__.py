@@ -20,7 +20,7 @@ from .playlist import load_playlists
 
 from ...utils import BotContext
 
-from .song import SLUGIFY_PATTERN, Song, title_slugify, SongStatus
+from .song import SLUGIFY_PATTERN, Song, title_slugify, SongStatus, SpotifySong
 
 from .voice import VoiceState
 from ...state import config, log
@@ -385,15 +385,18 @@ class Music(commands.Cog):
         offset = page * ITEMS_PER_PAGE
         embed = discord.Embed(title="Queue", description="")
         for i, s in enumerate(self.voice_state.queue[offset : offset + ITEMS_PER_PAGE]):
-            status_icon = "📀"
-            if s[0].status == SongStatus.NOT_AVAILABLE:
-                status_icon = "☁️"
-            elif s[0].status == SongStatus.DOWNLOADING:
-                status_icon = "⏳"
-            elif s[0].status == SongStatus.AVAILABLE:
-                status_icon = "✅"
-            else :
-                status_icon = "❌"
+            match s[0].status:
+                case SongStatus.NOT_FOUND:
+                    status_icon = "❌"
+                case SongStatus.NOT_AVAILABLE:
+                    status_icon = "☁️"
+                case SongStatus.DOWNLOADING:
+                    status_icon = "⏳"
+                case SongStatus.AVAILABLE:
+                    status_icon = "✅"
+                case SongStatus.LOCAL:
+                    status_icon = "📀"
+
             embed.description += f"{offset + i + 1}. {s[0].get_name()}{' [LRC]' if s[0].lyrics else ''}{status_icon}\n"
         embed.description += f"\nPage {page + 1} of {math.ceil(len(self.voice_state.queue) / ITEMS_PER_PAGE)}"
         await ctx.send(embed=embed)
@@ -443,7 +446,7 @@ class Music(commands.Cog):
             print(traceback.format_exc())
             await ctx.send("You are not in a voice channel.")
             return
-        if query == "" or query is None:
+        if not query:
             await ctx.send("Please provide a playlist name.")
             return
         if self.spotify_client is None:
@@ -456,7 +459,6 @@ class Music(commands.Cog):
 
     async def _queue_spotify_internal(self, ctx: commands.Context, query_id: str, max_results: int):
         spotify_tracks = []
-        # checking the uri type by api call and exception branching... cursed af
         try:
             spotify_tracks.extend(
                 i["track"] for i in (await self.bot.loop.run_in_executor(
@@ -500,22 +502,22 @@ class Music(commands.Cog):
                 youtube_result = (await self.bot.loop.run_in_executor(None,
                     lambda: YoutubeSearch(f"{name} {artist}", max_results=1))).to_dict()
                 log.debug(f"Youtube search result: {youtube_result}")
-                log.info(f"Found video id {youtube_result[0]['id']} for {name} - {artist}")
+
+                external_id = youtube_result[0]["id"]
+
+                log.info(f"Found video id {external_id} for {name} - {artist}")
 
                 if (youtube_result is None
                     or len(youtube_result) == 0
-                    or youtube_result[0]["id"] is None):
+                    or external_id is None):
                     log.warn(f"Youtube search failed for {name} - {artist}")
                     continue
             except Exception as e:
                 log.error(f"Error searching for {name} - {artist}: {e}")
                 continue
 
-            song = Song(os.path.join(self.temp_folder, youtube_result[0]["id"] + ".mp3"), log,
-                        status=SongStatus.NOT_AVAILABLE)
-            song.set_title(name)
-            song.set_external_id(youtube_result[0]["id"])
-            song.artist = artist
+            song = SpotifySong(os.path.join(self.temp_folder, external_id + ".mp3"), log,
+                               name, external_id, artist)
 
             await self.voice_state.add(song, False, False)
 

@@ -193,19 +193,6 @@ class Song:
             return self.base_name
         return f"{self.title} - {self.artist}"
 
-    def set_title(self, title: str):
-        """
-        Set the name of the song. This will not change the file name.
-        """
-        self.title = title
-        self.title_slugified = title_slugify(title)
-
-    def set_external_id(self, external_id: str):
-        """
-        Set the external ID of the song. Usually youtube video id
-        """
-        self.external_id = external_id
-
     def __str__(self):
         if not (self.title and self.artist):
             return self.base_name
@@ -220,26 +207,35 @@ class Song:
         return self.song_position < other.song_position # other statuses compare by position
 
     def download_track(self, lyric: bool, queue: 'SongQueue'):
+        pass
+
+class SpotifySong(Song):
+
+    def __init__(self, audio_path: str, log: Logger, title: str, external_id: str, artist: str):
+        super().__init__(audio_path, log, SongStatus.NOT_AVAILABLE)
+        self.title = title
+        self.title_slugified = title_slugify(title)
+        self.external_id = external_id
+        self.artist = artist
+
+
+    @override
+    def download_track(self, lyric: bool, queue: 'SongQueue'):
         song_tuple = (self, lyric)
         async def _reinsert_queue(song_tuple: Tuple['Song', bool]):
             for (i, item) in enumerate(queue):
                 if item == song_tuple:
                     break
-            queue.remove(i)
-            await queue.put(song_tuple)
+            await queue.reinsert(song_tuple)
 
         reinsert_queue = lambda: asyncio.run_coroutine_threadsafe(_reinsert_queue(song_tuple), queue.loop)
 
-        name = self.get_name()
-        artist = self.artist
         path = Path(self.path)
         folder = path.parent
-        video_id = self.external_id
         thumbnail_path = path.with_suffix(".jpg")
 
-
         if path.exists():
-            log.info(f"File already exists for {name} - {artist}")
+            log.info(f"File already exists for {self}")
             self.status = SongStatus.AVAILABLE
 
             try:
@@ -249,7 +245,7 @@ class Song:
 
                     self.get_subtitles()
             except Exception as error:
-                log.warn(f"Error setting thumbnail {thumbnail_path} and subtitles, with {remove_error}")
+                log.warn(f"Error setting thumbnail {thumbnail_path} and subtitles, with {error}")
 
 
             reinsert_queue()
@@ -264,9 +260,9 @@ class Song:
                         try:
                             os.remove(folder / oldest_song)
                             if path.with_suffix(".jpg").exists():
-                                os.remove(folder / oldest_song.with_suffix(".jpg"))
+                                os.remove(folder / Path(oldest_song).with_suffix(".jpg"))
                             if path.with_suffix(".lrc").exists():
-                                os.remove(folder / oldest_song.with_suffix(".lrc"))
+                                os.remove(folder / Path(oldest_song).with_suffix(".lrc"))
 
                             log.info(f"Removed oldest song {oldest_song} from cache")
                         except PermissionError as remove_error:
@@ -277,7 +273,7 @@ class Song:
                             break
 
                 if len(current_downloaded) >= config.config["music"].getint("MaxDownloadQueue", 5) * 2:
-                    log.info(f"Cache is full, wait for other downloads before starting download for {name} - {artist}")
+                    log.info(f"Cache is full, wait for other downloads before starting download for {self}")
                     self.status = SongStatus.NOT_AVAILABLE
                     return
         except Exception as cacheError:
@@ -285,7 +281,7 @@ class Song:
             self.status = SongStatus.NOT_AVAILABLE
             return
 
-        log.info(f"Downloading song {name}")
+        log.info(f"Downloading song {self}")
 
         yt_opts = {'extract_flat': 'discard_in_playlist',
                    'final_ext': 'mp3',
@@ -314,15 +310,15 @@ class Song:
         status_code = 1
         try:
             with yt_dlp.YoutubeDL(yt_opts) as ydl:
-                status_code = ydl.download(video_id)
+                status_code = ydl.download(self.external_id)
         except Exception as e:
             log.error(f"Error downloading with exception {e}")
             status_code = 1
 
         if status_code > 0:
-            log.warn(f"Youtube download failed for {name} - {artist}")
+            log.warn(f"Youtube download failed for {self}")
         else:
-            log.info(f"Downloaded to {path} for {name} - {artist}")
+            log.info(f"Downloaded to {path} for {self}")
 
 
         try:
@@ -332,9 +328,7 @@ class Song:
 
                 self.get_subtitles()
         except Exception as error:
-            log.warn(f"Error setting thumbnail {thumbnail_path} and subtitles, with {remove_error}")
-
-
+            log.warn(f"Error setting thumbnail {thumbnail_path} and subtitles, with {error}")
 
         self.status = SongStatus.AVAILABLE if status_code == 0 else SongStatus.NOT_FOUND
         reinsert_queue()
@@ -411,6 +405,10 @@ class SongQueue[T](asyncio.PriorityQueue[T]):
 
     def clear(self) -> None:
         self._queue.clear()
+
+    async def reinsert(self, item: T) -> None:
+        self.remove(item)
+        await self.put(item)
 
     def remove(self, index: int) -> None:
         del self._queue[index]
