@@ -8,7 +8,7 @@ dependencies = [
     "async-timeout>=5.0.1",
     "discord-py[voice]>=2.5.2",
     "opencc>=1.1.9",
-    "regex>=2024.11.6",
+    "regex>=2024.11.6"
 ]
 
 [project.scripts]
@@ -21,6 +21,11 @@ package = true
 music-id3metadata = ["eyed3>=0.9.7"]
 music-playlists = ["m3u8>=6.0.0"]
 music-dominantcolour = ["pillow>=11.1.0"]
+music-external = [
+    "spotipy>=2.25.1",
+    "youtube-search>=2.1.2",
+    "yt-dlp>=2025.4.30"
+]
 
 [dependency-groups]
 dev = ["types-eyed3>=0.9.7.20250306"]

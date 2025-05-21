@@ -17,3 +17,10 @@ IgnoredPaths=/media/Moosic/Ignore
 GuessVoteSkipPercent=50
 GuessLenient=True
 Playlists=True
+TempPath=.
+MaxDownloadQueue=5
+Bitrate=320
+
+[spotify]
+ClientId=
+ClientSecret=

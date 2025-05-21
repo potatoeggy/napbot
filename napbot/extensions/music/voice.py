@@ -1,15 +1,18 @@
-from collections import Counter
-import random
 import asyncio
+import random
+from collections import Counter
+from importlib.metadata import always_iterable
 from typing import Literal
 
 import discord
-from discord.ext import commands
 from async_timeout import timeout
+from discord.ext import commands
+from nacl.bindings import crypto_secretstream_xchacha20poly1305_state
 
 from .discord import LyricPlayer, MusicPanel
+from .song import Song, SongQueue, SongStatus
+from ...state import config, log
 from ...utils import BotContext
-from .song import Song, SongQueue
 
 
 class VoiceState:
@@ -20,11 +23,11 @@ class VoiceState:
         guess_vote_skip_percent: float = 0.0,
     ):
         self.bot = bot
-        self.queue = SongQueue[tuple[Song, bool]]()
+        self.queue = SongQueue[tuple[Song, bool]](self.bot.loop)
         self.current = None
         self.loop = asyncio.get_event_loop()
-        self.next = asyncio.Event()
-        self.player = bot.loop.create_task(self.audio_player())
+        self.ready = asyncio.Event()
+        self.player = None
         self.vc: discord.VoiceClient | None = None
         self.audio_running = False
 
@@ -34,7 +37,8 @@ class VoiceState:
         self.start_pos: Literal["RANDOM", "CHORUS", "BEGINNING"] = "BEGINNING"
 
     def __del__(self):
-        self.player.cancel()
+        if self.player:
+            self.player.cancel()
 
     def __bool__(self):
         return bool(self.vc)
@@ -45,24 +49,23 @@ class VoiceState:
 
         num -= 1
         for _ in range(num):
-            await self.queue.get()
+            await self.queue.get_with_update()
         if self.current:
             self.vc.stop()
 
     async def add(self, song: Song, right_away: bool = False, lyrics: bool = True):
+        log.info(f"Added song to queue: {song.title}")
         if not right_away:
             await self.queue.put((song, lyrics))
         else:
             self.queue.putfirst((song, lyrics))
 
     def remove(self, num: int):
-        self.queue.remove(num - 1)
+        self.queue.remove_with_update(num - 1)
 
     async def connect(self, ctx: BotContext):
         channel = ctx.author.voice.channel
         self.vc = ctx.guild.voice_client
-        if not self.audio_running:
-            self.player = self.bot.loop.create_task(self.audio_player())
         if self.vc:
             if self.vc.channel.id == channel.id:
                 return
@@ -71,18 +74,34 @@ class VoiceState:
             self.vc = await channel.connect()
         self.ctx = ctx
 
+        if not self.audio_running:
+            self.player = self.bot.loop.create_task(self.audio_player())
+
+
     async def audio_player(self):
-        self.audio_running = True
+        self.ready.set()
         while True:
             try:
-                async with timeout(180):
-                    self.current = await self.queue.get()
+                async with timeout(180): # vc should be started before audio player
+                    if self.vc is None or not self.vc.is_connected():
+                        self.audio_running = False
+                        return # else it is a user interrupt and we exit
+                    self.audio_running = True
+                    self.current = await self.queue.get_with_update()
             except asyncio.TimeoutError:
                 self.bot.loop.create_task(self.stop())
                 self.audio_running = False
                 return
 
             song, show_lyrics = self.current
+
+            if song.status == SongStatus.NOT_FOUND:
+                log.info(f"{song.title} not found, skipping.")
+                await self.ctx.send(
+                    f"Could not find **{song.title}**. Skipping to the next song."
+                )
+                continue
+
             start_time = 0
             if self.guess_mode:
                 if self.start_pos == "RANDOM":
@@ -115,12 +134,16 @@ class VoiceState:
             start_ts = f"{start_time_h:02}:{start_time_m:02}:{start_time_s:02}.{start_time_ms:03}"
             if not self.vc:
                 continue
-
-            self.vc.play(
-                discord.FFmpegOpusAudio(
-                    source=song.path, bitrate=96, before_options=f"-ss {start_ts}"
+            try:
+                self.vc.play(
+                    discord.FFmpegOpusAudio(
+                        source=song.path, bitrate=config.config["music"].getint("Bitrate", 320), before_options=f"-ss {start_ts}"
+                    )
                 )
-            )
+            except Exception as e:
+                print(f"Error playing song: {e}")
+                continue
+
             if not self.guess_mode:
                 lyric_client = LyricPlayer(
                     self.vc, self.ctx, song, self, self.bot, show_lyrics
@@ -176,3 +199,8 @@ class VoiceState:
             self.vc.stop()
             await self.vc.disconnect()
             self.vc = None
+
+        if self.audio_running:
+            self.audio_running = False
+            self.player = None
+            self.player_ready = None
